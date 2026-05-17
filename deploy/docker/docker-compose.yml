@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  omega-lb:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    privileged: true                    # eBPF requires elevated privileges
+    network_mode: host
+    pid: host
+    volumes:
+      - /sys/fs/bpf:/sys/fs/bpf
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /proc:/proc:ro
+      - ./config.yaml:/etc/omega-lb/config.yaml:ro
+      - models:/var/lib/omega-lb/models
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  # Reference backends for local testing
+  backend-1:
+    image: hashicorp/http-echo
+    command: ["-text=backend-1", "-listen=:8081"]
+    ports: ["8081:8081"]
+
+  backend-2:
+    image: hashicorp/http-echo
+    command: ["-text=backend-2", "-listen=:8082"]
+    ports: ["8082:8082"]
+
+  backend-3:
+    image: hashicorp/http-echo
+    command: ["-text=backend-3", "-listen=:8083"]
+    ports: ["8083:8083"]
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.98.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "8888:8888"
+
+  # Prometheus + Grafana
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9091:9090"]
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports: ["3000:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=omega
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  models:
+  grafana-data:

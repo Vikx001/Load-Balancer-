@@ -1,0 +1,301 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-flight runs for the same branch on new pushes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  GO_VERSION: "1.22"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Job matrix
+# ────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. Python lint ──────────────────────────────────────────────────────
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install ruff==0.4.*
+
+      - name: ruff check
+        run: ruff check ml/ tests/ demo/ dashboard/ --output-format=github
+
+  # ── 2. Go lint ──────────────────────────────────────────────────────────
+  lint-go:
+    name: Lint Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: go vet
+        run: cd controlplane && go vet ./...
+
+      - name: staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "2024.1"
+          working-directory: controlplane
+        continue-on-error: true  # advisory, not blocking
+
+  # ── 3. Python unit tests ────────────────────────────────────────────────
+  test-python:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    needs: [lint-python]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install numpy torch onnxruntime pytest pytest-timeout
+
+      - name: Run all Python tests
+        run: python -m pytest tests/ -v --tb=short --timeout=120
+
+  # ── 4. Go unit tests ────────────────────────────────────────────────────
+  test-go:
+    name: Go Tests
+    runs-on: ubuntu-latest
+    needs: [lint-go]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: go test
+        run: cd controlplane && go test ./... -race -timeout 120s
+
+  # ── 5. ML module smoke test ─────────────────────────────────────────────
+  #    Validates that:
+  #      (a) ml.kan / ml.cbf / ml.simulation are importable
+  #      (b) Symbolic inference produces a valid simplex
+  #      (c) CBF projection never exceeds the cap
+  smoke-ml-import:
+    name: ML Import & Inference Smoke
+    runs-on: ubuntu-latest
+    needs: [lint-python]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install numpy onnxruntime
+
+      - name: KAN symbolic inference
+        run: |
+          python - <<'EOF'
+          import numpy as np
+          from ml.kan import KANInference
+          kan = KANInference.symbolic()
+          cpu    = np.array([0.4, 0.6, 0.2, 0.5])
+          lat_ms = np.array([45., 55., 120., 40.])
+          err    = np.array([0.001, 0.002, 0.010, 0.001])
+          health = [True, True, True, True]
+          w = kan.infer(cpu, lat_ms, err, health)
+          assert abs(w.sum() - 1.0) < 1e-6, f"weights don't sum to 1: {w.sum()}"
+          assert (w >= 0).all(), f"negative weights: {w}"
+          print(f"OK  weights={w.round(4)}")
+          eqs = kan.equations(cpu, lat_ms, err, health)
+          assert len(eqs) == 4
+          print("OK  equations:", eqs[0])
+          EOF
+
+      - name: CBF projection invariants
+        run: |
+          python - <<'EOF'
+          import numpy as np
+          from ml.cbf import CBFProjector
+          cbf = CBFProjector(cap=0.80, lam=0.5)
+          # Overloaded backend-0 scenario
+          weights = np.array([0.9, 0.05, 0.03, 0.02])
+          loads   = np.array([0.95, 0.3, 0.2, 0.4])
+          w, fired = cbf.project(weights, loads)
+          assert abs(w.sum() - 1.0) < 1e-6, f"CBF weights don't sum to 1: {w.sum()}"
+          assert (w >= 0).all(), "CBF produced negative weights"
+          assert fired[0], "CBF should fire on overloaded backend-0"
+          assert w[0] < weights[0] / weights.sum(), "CBF should reduce weight on overloaded backend"
+          print(f"OK  safe_weights={w.round(4)}, cbf_fired={fired}")
+          EOF
+
+      - name: SafetyMonitor tracking
+        run: |
+          python - <<'EOF'
+          import numpy as np
+          from ml.cbf import SafetyMonitor
+          m = SafetyMonitor(n_backends=4, cap=0.80)
+          for _ in range(10):
+              w, _ = m.step(
+                  np.array([0.7, 0.1, 0.1, 0.1]),
+                  np.array([0.9, 0.3, 0.3, 0.3]),  # backend-0 overloaded
+              )
+          audit = m.audit()
+          assert audit["total_projections"] == 10
+          assert audit["violation_rates"][0] > 0, "Should have detected violations on backend-0"
+          print(f"OK  audit={audit}")
+          EOF
+
+      - name: LBSimEnv step
+        run: |
+          python - <<'EOF'
+          import numpy as np
+          from ml.simulation import LBSimEnv
+          env = LBSimEnv(n_backends=4)
+          state, _ = env.reset()
+          assert len(state) == 4 * 8 + 4, f"Wrong state dim: {len(state)}"
+          w = np.array([0.25, 0.25, 0.25, 0.25])
+          s, r, terminated, truncated, info = env.step(w)
+          assert len(s) == len(state)
+          assert "p99_ms" in info
+          print(f"OK  reward={r:.3f}, p99={info['p99_ms']:.1f}ms")
+          EOF
+
+  # ── 6. PPO+KAN training smoke ───────────────────────────────────────────
+  smoke-train-ppo:
+    name: PPO+KAN Training Smoke (1k steps)
+    runs-on: ubuntu-latest
+    needs: [test-python]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ML dependencies
+        run: pip install numpy torch onnx onnxruntime
+
+      - name: Short PPO training run
+        run: |
+          python - <<'EOF'
+          import os, sys
+          sys.path.insert(0, "ml/ppo")
+          from train_ppo_kan import train, PPOConfig
+          cfg = PPOConfig(num_backends=4)
+          cfg.total_steps   = 1000
+          cfg.rollout_steps = 128
+          cfg.ppo_epochs    = 2
+          train(cfg, output_dir="/tmp/omega_ci_models")
+          assert os.path.exists("/tmp/omega_ci_models/kan_actor.onnx"), "ONNX not exported"
+          print("OK  PPO+KAN smoke training passed")
+          EOF
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kan-model-${{ github.sha }}
+          path: /tmp/omega_ci_models/
+          retention-days: 7
+
+  # ── 7. DQN+A3C training smoke ──────────────────────────────────────────
+  smoke-train-dqn:
+    name: DQN+A3C Training Smoke (1k steps)
+    runs-on: ubuntu-latest
+    needs: [test-python]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ML dependencies
+        run: pip install numpy torch onnx onnxruntime
+
+      - name: Short DQN training run
+        run: |
+          python - <<'EOF'
+          import os, sys
+          sys.path.insert(0, "ml/dqn_a3c")
+          from train_dqn_a3c import train, DQNConfig
+          cfg = DQNConfig()
+          cfg.total_steps = 1000
+          train(cfg, output_dir="/tmp/omega_ci_models_dqn")
+          assert os.path.exists("/tmp/omega_ci_models_dqn/dqn_rate_limiter.onnx"), "DQN ONNX not exported"
+          print("OK  DQN+A3C smoke training passed")
+          EOF
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dqn-model-${{ github.sha }}
+          path: /tmp/omega_ci_models_dqn/
+          retention-days: 7
+
+  # ── 8. Docker build validation ─────────────────────────────────────────
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [test-python, test-go]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: false
+          tags: omega-lb:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 9. Integration gate (required for merging) ─────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs:
+      - test-python
+      - test-go
+      - smoke-ml-import
+    if: always()
+    steps:
+      - name: Check required jobs
+        run: |
+          if [[ "${{ needs.test-python.result }}" != "success" ]]; then
+            echo "test-python failed" && exit 1
+          fi
+          if [[ "${{ needs.test-go.result }}" != "success" ]]; then
+            echo "test-go failed" && exit 1
+          fi
+          if [[ "${{ needs.smoke-ml-import.result }}" != "success" ]]; then
+            echo "smoke-ml-import failed" && exit 1
+          fi
+          echo "All required checks passed."

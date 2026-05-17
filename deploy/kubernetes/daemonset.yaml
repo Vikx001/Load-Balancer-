@@ -1,0 +1,166 @@
+---
+# Omega-LB DaemonSet — deploys one instance per K8s node (replaces kube-proxy for L7)
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: omega-lb
+  namespace: kube-system
+  labels:
+    app: omega-lb
+spec:
+  selector:
+    matchLabels:
+      app: omega-lb
+  template:
+    metadata:
+      labels:
+        app: omega-lb
+    spec:
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists   # schedule on all nodes including control-plane
+      priorityClassName: system-node-critical
+      serviceAccountName: omega-lb
+      containers:
+        - name: omega-lb
+          image: omega-lb:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true          # required to load eBPF programs
+            capabilities:
+              add: ["NET_ADMIN", "SYS_ADMIN", "BPF"]
+          args:
+            - "--config=/etc/omega-lb/config.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/omega-lb
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+            - name: proc
+              mountPath: /proc
+            - name: models
+              mountPath: /var/lib/omega-lb/models
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            - name: xds-grpc
+              containerPort: 18000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: omega-lb-config
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: models
+          hostPath:
+            path: /var/lib/omega-lb/models
+            type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: omega-lb
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: omega-lb
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints", "services", "nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: omega-lb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: omega-lb
+subjects:
+  - kind: ServiceAccount
+    name: omega-lb
+    namespace: kube-system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: omega-lb-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    mode: kubernetes
+    ebpf:
+      object_dir: /usr/lib/omega-lb/bpf
+      cgroup_path: /sys/fs/cgroup
+      pin_path: /sys/fs/bpf/omega-lb
+    ring:
+      vnodes_per_server: 150
+      bounded_load_beta: 1.25
+      adjust_every_n: 100
+      adjust_threshold: 1.30
+    rl:
+      enabled: true
+      onnx_model_path: /var/lib/omega-lb/models/kan_actor.onnx
+      inference_timeout_ms: 5
+      step_interval_ms: 500
+      action_smoothing: 0.7
+      cbf_lambda: 0.5
+      capacity_pct_cap: 0.80
+    rate_limit:
+      enabled: true
+      update_interval_ms: 100
+    health:
+      active_interval_s: 2
+      fail_threshold: 3
+      passive_error_pct: 0.10
+    telemetry:
+      otlp_endpoint: "otel-collector.monitoring:4317"
+      export_interval_s: 10
+    xds:
+      listen_addr: ":18000"

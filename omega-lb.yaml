@@ -1,0 +1,47 @@
+# ────────────────────────────────────────────────────────────────────────────
+# Omega-LB — backend configuration
+# Edit this file to point at your real services, then run:
+#   ./start.sh
+#
+# The proxy starts on proxy.port and routes traffic across the backends below
+# using KAN routing weights, CBF safety projection, and token-bucket rate
+# limiting — all running locally, for free.
+# ────────────────────────────────────────────────────────────────────────────
+
+proxy:
+  host: "127.0.0.1"     # change to "0.0.0.0" to accept external traffic
+  port: 8080
+
+backends:
+  - host: "127.0.0.1"
+    port: 9000
+    name: "backend-0"
+    zone: "local-a"
+
+  - host: "127.0.0.1"
+    port: 9001
+    name: "backend-1"
+    zone: "local-b"
+
+  - host: "127.0.0.1"
+    port: 9002
+    name: "backend-2"
+    zone: "local-c"
+
+  - host: "127.0.0.1"
+    port: 9003
+    name: "backend-3"
+    zone: "local-a"
+
+kan:
+  # Path to trained ONNX model. Symbolic fallback is used if the file is absent.
+  model_path: "ml/models/kan_actor.onnx"
+
+cbf:
+  cap: 0.80        # maximum allowed utilisation per backend (0.0 – 1.0)
+  lambda: 0.5      # CBF class-K function coefficient
+
+rate_limiting:
+  initial_rps: 1000   # starting token-bucket rate per backend (req / s)
+  min_rps: 100
+  max_rps: 5000

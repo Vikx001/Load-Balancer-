@@ -1,0 +1,54 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# pytest / mypy
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Streamlit
+.streamlit/
+
+# Runtime artifacts
+demo/live_metrics.json
+proxy.log
+*.log
+
+# ML model weights (large binaries — distribute separately)
+ml/models/*.onnx
+ml/models/*.pt
+ml/models/*.pth
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# eBPF build artifacts
+ebpf/*.o
+ebpf/vmlinux.h
+
+# Go build
+controlplane/bin/
+controlplane/vendor/
+
+# Secrets
+.env
+.env.*
+secrets.yaml
