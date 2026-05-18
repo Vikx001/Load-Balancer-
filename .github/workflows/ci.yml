@@ -14,6 +14,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11"
   GO_VERSION: "1.22"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 # ────────────────────────────────────────────────────────────────────────────
 # Job matrix
@@ -47,7 +48,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
+
+      - name: go mod tidy
+        run: cd controlplane && go mod tidy
 
       - name: go vet
         run: cd controlplane && go vet ./...
@@ -89,7 +93,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
+
+      - name: go mod download
+        run: cd controlplane && go mod download
 
       - name: go test
         run: cd controlplane && go test ./... -race -timeout 120s

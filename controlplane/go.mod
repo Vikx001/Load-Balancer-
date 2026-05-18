@@ -13,8 +13,4 @@ require (
 	github.com/orcaman/concurrent-map/v2 v2.0.1
 	go.uber.org/zap v1.27.0
 	github.com/spf13/viper v1.19.0
-	onnxruntime-go v0.0.0-00010101000000-000000000000
 )
-
-// onnxruntime-go is a local replace until upstream package is used
-replace onnxruntime-go => ./vendor/onnxruntime-go

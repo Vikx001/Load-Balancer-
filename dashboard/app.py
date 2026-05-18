@@ -7,7 +7,10 @@ Two modes, same UI:
 
 Run:  .venv/bin/streamlit run dashboard/app.py
 """
-import sys, os, time, math
+import sys
+import os
+import time
+import math
 from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -20,7 +23,8 @@ from plotly.subplots import make_subplots
 try:
     from demo.metrics_store import read_live_metrics as _read_live
 except ImportError:
-    _read_live = lambda: None
+    def _read_live():
+        return None
 
 st.set_page_config(page_title="Omega-LB Console", layout="wide", initial_sidebar_state="collapsed")
 
