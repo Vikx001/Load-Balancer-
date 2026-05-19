@@ -8,6 +8,12 @@ Omega-LB sits in front of your backends as a transparent reverse proxy. It route
 
 ---
 
+## Demo
+
+https://github.com/user-attachments/assets/6e48e65a-05a5-4f37-941e-33052a5f7276
+
+---
+
 <details>
 <summary><strong>🟢 OMEGA-LB — LAYMAN'S DESCRIPTION</strong> (click to expand)</summary>
 
@@ -356,12 +362,36 @@ tests/               Python unit tests (72 tests, 71 pass standalone)
 
 ## Running the dashboard alone (DEMO mode)
 
-No proxy, no backends needed:
+No proxy, no backends needed.
 
+**Step 1 — create and activate a virtual environment:**
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install streamlit plotly numpy
+source .venv/bin/activate
+```
+
+**Step 2 — install dependencies:**
+```bash
+pip install streamlit plotly pandas numpy
+```
+
+**Step 3 — create the metrics file (first time only):**
+```bash
+mkdir -p demo
+echo '{}' > demo/live_metrics.json
+```
+
+**Step 4 — launch the dashboard:**
+```bash
 .venv/bin/streamlit run dashboard/app.py
+```
+
+Open **http://localhost:8501** in your browser.  
+If Streamlit prompts for an email, press Enter to skip.
+
+**To stop the dashboard:**
+```bash
+pkill -f "streamlit run"
 ```
 
 The dashboard runs a built-in M/M/1 queueing simulation with fault injection controls so you can explore all 5 layers and the UI without any infrastructure.
