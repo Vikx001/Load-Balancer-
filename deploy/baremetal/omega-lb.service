@@ -1,0 +1,53 @@
+[Unit]
+Description=Omega-LB Control Plane
+Documentation=https://github.com/omega-lb/omega-lb
+After=network-online.target
+Wants=network-online.target
+
+# ─── Why Restart=always with RestartSec=1s matters ───────────────────────────
+# The eBPF data plane (kernel-side programs) continues routing traffic even
+# while this service is down.  The programs are attached to the cgroup and
+# run independently of the Go daemon.  With pinned maps in /sys/fs/bpf/omega/
+# the ring state survives the restart gap.
+#
+# The 1s gap between crash and restart means at most ~1s of ring drift
+# (backends can change health during the gap).  This is acceptable for a
+# Layer 4/7 load balancer where the alternative is a full traffic outage.
+#
+# eBPF maps in /sys/fs/bpf/omega/ MUST be cleaned up by a maintenance task
+# only after a planned migration.  Never delete them during normal operation.
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/omega-lb --config /etc/omega-lb/config.yaml
+Restart=always
+RestartSec=1s
+RestartPreventExitStatus=SIGKILL
+
+# Crash log: the structured log makes crash analysis tractable.
+# Pipe to journald; query with: journalctl -u omega-lb -f --output=json
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=omega-lb
+
+# Resource limits: eBPF map memory is kernel memory, not accounted here.
+# The maps are in /sys/fs/bpf/; this limit covers Go heap + goroutine stacks.
+MemoryHigh=512M
+MemoryMax=768M
+LimitNOFILE=65536
+
+# Security hardening: drop all ambient capabilities except BPF and net admin.
+# CAP_BPF:        load and update eBPF programs and maps
+# CAP_NET_ADMIN:  attach to cgroup, set SO_KEEPALIVE on sockets
+# CAP_SYS_ADMIN:  pin maps to /sys/fs/bpf/ (BPF filesystem)
+# All other capabilities are dropped.
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN
+NoNewPrivileges=no
+
+# Pinned map directory must persist across restarts.
+# BindPaths=/sys/fs/bpf:/sys/fs/bpf
+
+[Install]
+WantedBy=multi-user.target

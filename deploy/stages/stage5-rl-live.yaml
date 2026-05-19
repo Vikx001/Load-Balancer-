@@ -1,0 +1,95 @@
+# Omega-LB — Stage 5 Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 5 (Month 9+): RL takes live traffic control
+#
+# WHAT THIS ACTIVATES over Stage 4:
+#   • RL agent switches from ModeAssisted to ModeAuto
+#   • Agent's vnode weight recommendations are applied to the live H&A ring
+#   • CBF safety projector enforces capacity constraints on every action
+#   • DQN+A3C rate limiter active: per-service token-bucket limits adapt to load
+#   • Model hot-reload: push a new .onnx file to model_store_path without restart
+#
+# ROLLBACK PROCEDURE (if p99 degrades after RL activation):
+#   # Instantly switch to static ring (no restart):
+#   curl -X POST http://your-lb:9000/admin/mode \
+#     -H 'Content-Type: application/json' \
+#     -d '{"mode":"MANUAL","weights":[]}'
+#   # Empty weights = equal-weight round-robin (Stage 1 behaviour)
+#   # You have NOT lost the eBPF data plane; only the RL weight control is paused
+#
+# EMERGENCY FALLBACK (RL producing unsafe weights):
+#   # Switch to H&A ring self-adjustment (Stage 2 behaviour):
+#   curl -X POST http://your-lb:9000/admin/mode \
+#     -d '{"mode":"ASSISTED","weights":[]}'
+#
+# MODEL UPDATE PROCEDURE (no restart):
+#   1. Train new model: make train-ppo
+#   2. Push to model store: omegalb model push --version v1.1.0 --src ./kan_actor.onnx
+#   3. Daemon hot-reloads within hot_reload_watch_interval_s seconds
+#   4. Verify: GET /admin/mode → {"model_version":"v1.1.0"}
+# ─────────────────────────────────────────────────────────────────────────────
+
+stage: 5
+mode: baremetal
+
+ebpf:
+  object_dir: /usr/lib/omega-lb/bpf
+  cgroup_path: /sys/fs/cgroup
+  pin_path: /sys/fs/bpf/omega-lb
+  interface: eth0
+  numa_node: -1
+
+ring:
+  vnodes_per_server: 150
+  bounded_load_beta: 1.25
+  adjust_every_n: 100
+  adjust_threshold: 1.30
+  wal_path: /var/lib/omega-lb/ring.wal
+  slow_start_batch_size: 15
+  slow_start_interval_s: 30
+  slow_start_max_error_rate_pct: 1
+
+rl:
+  enabled: true
+  onnx_model_path: /var/lib/omega-lb/models/kan_actor.onnx
+  inference_timeout_ms: 5
+  step_interval_ms: 500
+  action_smoothing: 0.7
+  cbf_lambda: 0.5
+  capacity_pct_cap: 0.80
+  model_version: v1.0.0
+  model_store_path: /var/lib/omega-lb/models
+  hot_reload_watch_interval_s: 60
+
+rate_limit:
+  enabled: true
+  update_interval_ms: 100
+  services: {}  # populate with service-specific limits
+
+health:
+  active_interval_s: 2
+  fail_threshold: 3
+  passive_error_pct: 0.10
+  min_successes_before_restore: 60
+
+telemetry:
+  otlp_endpoint: "otel-collector.monitoring:4317"
+  export_interval_s: 10
+
+tls:
+  mode: passthrough
+
+metrics:
+  max_label_values: 50
+  path_aggregation: true
+  prometheus_listen_addr: ":9090"
+
+admin:
+  listen_addr: ":9000"
+  flight_recorder_capacity: 10000
+
+xds:
+  listen_addr: ":18000"
+
+consensus:
+  enabled: false

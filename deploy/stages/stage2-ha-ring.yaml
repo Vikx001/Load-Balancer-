@@ -1,0 +1,75 @@
+# Omega-LB — Stage 2 Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2 (Month 3): H&A consistent hash ring replaces static round-robin
+#
+# WHAT THIS ADDS over Stage 1:
+#   • H&A self-adjusting vnode ring: vnodes redistributed when a backend
+#     exceeds 1.25× mean load — moves work before saturation
+#   • Proactive pre-distribution loop (500ms interval)
+#   • Slow-start controller: adds vnodes gradually after backend recovery
+#   • xDS gRPC server: Envoy-compatible endpoint discovery
+#   • Session affinity table (stateful services)
+#
+# BENCHMARK TARGET (run same test as Stage 1):
+#   wrk2 -t4 -c100 -d30s -R100000 http://your-vip/
+#   Add a skewed load generator targeting one backend 3×:
+#     wrk2 -t4 -c100 -d30s -R300000 http://your-vip/heavy-endpoint
+#   Expect: H&A vnode adjustment fires within 5–10 seconds; p99 stabilises
+#   Compare flamegraph: "ring.adjust" should appear; "bisect_right" is the hot path
+#   → This is the flamegraph evidence you need to justify Stage 2's Maglev table (perf trap 2)
+#
+# ADVANCE TO STAGE 3 WHEN:
+#   • H&A adjustment firing verified in production metrics
+#   • Vnode migration events visible in admin API: GET /admin/explain/recent
+#   • No regression vs Stage 1 p99 on balanced workloads
+# ─────────────────────────────────────────────────────────────────────────────
+
+stage: 2
+mode: baremetal
+
+ebpf:
+  object_dir: /usr/lib/omega-lb/bpf
+  cgroup_path: /sys/fs/cgroup
+  pin_path: /sys/fs/bpf/omega-lb
+  interface: eth0
+  numa_node: -1
+
+ring:
+  vnodes_per_server: 150      # full H&A: 150 vnodes × N backends
+  bounded_load_beta: 1.25
+  adjust_every_n: 100         # re-evaluate vnode distribution every 100 requests
+  adjust_threshold: 1.30      # 30% above mean triggers vnode migration
+  wal_path: /var/lib/omega-lb/ring.wal
+  slow_start_batch_size: 15
+  slow_start_interval_s: 30
+  slow_start_max_error_rate_pct: 1
+
+rl:
+  enabled: false
+
+rate_limit:
+  enabled: false
+
+health:
+  active_interval_s: 2
+  fail_threshold: 3
+  passive_error_pct: 0.10
+  min_successes_before_restore: 60
+
+tls:
+  mode: passthrough
+
+metrics:
+  max_label_values: 50
+  path_aggregation: true
+  prometheus_listen_addr: ":9090"
+
+admin:
+  listen_addr: ":9000"
+  flight_recorder_capacity: 5000
+
+xds:
+  listen_addr: ":18000"
+
+consensus:
+  enabled: false  # enable in stage 3 if running >1 daemon instance

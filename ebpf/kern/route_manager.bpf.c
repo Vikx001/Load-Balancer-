@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 // Layer 0 — route_manager: path/header matching → cluster selection
 // Tail-calls into lb_policy.
+//
+// ─── VERIFIER SAFETY ─────────────────────────────────────────────────────────
+// The rule iteration loop (up to 32 iterations, #pragma unroll) is bounded and
+// safe.  match_prefix compares at most 8 bytes per call (eBPF stack constraint).
+// The tail-call depth is checked at entry; if depth ≥ TAIL_CALL_DEPTH_MAX the
+// chain is aborted (fail-open) before the tail call to protect the kernel limit.
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
@@ -22,6 +28,12 @@ extern struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
     __uint(max_entries, 1);
 } scratch_map SEC(".maps");
+
+// Tail-call depth counter (owned by filter_manager; shared via extern)
+extern struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+} tail_depth_map SEC(".maps");
 
 // ─── Inner map value (route rule) ─────────────────────────────────────────
 struct route_rule {
@@ -91,9 +103,37 @@ SEC("sockops")
 int route_manager(struct bpf_sock_ops *skops)
 {
     __u32 zero = 0;
+
+    // ── Tail-call depth guard ────────────────────────────────────────────
+    // Increment the per-CPU depth counter and abort if it approaches the
+    // kernel hard limit of 33.  TAIL_CALL_DEPTH_MAX is 30 (see omega_maps.h).
+    __u32 *depth = bpf_map_lookup_elem(&tail_depth_map, &zero);
+    if (depth) {
+        if (*depth >= TAIL_CALL_DEPTH_MAX)
+            return SK_PASS; // abort chain; fail-open
+        (*depth)++;
+    }
+
     struct request_ctx *ctx = bpf_map_lookup_elem(&scratch_map, &zero);
     if (!ctx)
         return SK_PASS;
+
+    // ── TLS passthrough: skip all rule matching ──────────────────────────
+    // When TLS is NOT terminated at the LB, request_ctx.path contains
+    // encrypted bytes (or the SNI hostname in PROTO_TLS_SNI mode).
+    // Attempting URL-path matching on encrypted ciphertext silently routes
+    // everything to cluster 0 — the TLS termination trap.
+    //
+    //   PROTO_TLS_PASSTHROUGH → route to default cluster 0, no rule matching.
+    //   PROTO_TLS_SNI         → ctx->path holds the SNI hostname (ASCII, ≤63B);
+    //                           use match_prefix() on hostname as-is.
+    //   PROTO_TLS_KTLS        → kernel decrypted; ctx->path is plaintext URL.
+    //                           Normal L7 rule matching proceeds below.
+    if (ctx->protocol == PROTO_TLS_PASSTHROUGH) {
+        ctx->cluster_id = 0;  // default cluster; operator must ensure TLS backends here
+        bpf_tail_call(skops, &prog_array, PROG_LB_POLICY);
+        return SK_PASS;
+    }
 
     // Look up inner route-rule map for this service
     __u32 *inner_fd = bpf_map_lookup_elem(&service_config_map, &ctx->service_id);
@@ -104,7 +144,10 @@ int route_manager(struct bpf_sock_ops *skops)
         return SK_PASS;
     }
 
-    // Iterate rules (up to 32, unrolled) to find first prefix match
+    // Iterate rules (up to 32, unrolled) to find first prefix match.
+    // For PROTO_TLS_SNI: ctx->path contains the SNI hostname; rules use
+    // path_prefix to match hostnames (e.g. "api.example.com").
+    // For all other protocols: ctx->path is a URL path or hostname.
     __u32 matched_cluster = 0;
     #pragma unroll
     for (__u32 rule_id = 0; rule_id < 32; rule_id++) {

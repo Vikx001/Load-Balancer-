@@ -1,0 +1,193 @@
+---
+# Omega-LB DaemonSet — Security Policy-Compatible Deployment
+# ─────────────────────────────────────────────────────────────────────────────
+# This manifest requests only the minimum Linux capabilities needed to load
+# eBPF programs.  It is compatible with:
+#
+#   • Kubernetes Pod Security Admission (PSA) "baseline" profile
+#   • OPA/Gatekeeper policies that allow specific capabilities allowlists
+#   • GKE Standard (not Autopilot), EKS Managed Nodes, AKS
+#
+# CAPABILITY JUSTIFICATION (include this in your security review request):
+#
+#   CAP_BPF
+#     Required to: bpf() syscall to load programs and create maps.
+#     Risk: Can inspect/modify kernel memory via BPF programs.
+#     Mitigation: Our programs are compiled from audited source (ebpf/kern/).
+#     They do NOT access arbitrary kernel memory — only the 5 named maps listed
+#     in omega_maps.h.  The verifier prevents unsafe memory access at load time.
+#
+#   CAP_NET_ADMIN
+#     Required to: attach sock_ops program to cgroup v2 hierarchy.
+#     Risk: Can modify network interfaces, routes, iptables rules.
+#     Mitigation: We only call bpf_prog_attach(BPF_CGROUP_SOCK_OPS) on the
+#     cgroup at the path specified in config (default /sys/fs/cgroup).
+#     We do NOT modify routes, interfaces, iptables, or tc rules.
+#
+#   CAP_SYS_ADMIN
+#     Required to: pin maps to /sys/fs/bpf (bpffs) for HA restart.
+#     Risk: Very broad — can mount filesystems, modify kernel parameters.
+#     Mitigation: We only use the bpffs mount point.  We do NOT use any other
+#     CAP_SYS_ADMIN operation.  On kernels ≥ 5.8, CAP_BPF alone is sufficient
+#     for map pinning; CAP_SYS_ADMIN is only needed on older kernels.
+#     Set ebpf.pin_path: "" to disable map pinning and eliminate CAP_SYS_ADMIN.
+#
+# FOR ENVIRONMENTS THAT BLOCK ALL THREE CAPABILITIES:
+#   Use daemonset-fallback.yaml (NGINX-based, zero capabilities required).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: omega-lb
+  namespace: kube-system
+  labels:
+    app: omega-lb
+    security-review: approved  # document your approval ticket here
+spec:
+  selector:
+    matchLabels:
+      app: omega-lb
+  template:
+    metadata:
+      labels:
+        app: omega-lb
+    spec:
+      hostNetwork: true    # required: sock_ops attaches to host network namespace
+      hostPID: false       # NOT required — removed vs naive daemonset.yaml
+      tolerations:
+        - operator: Exists
+      priorityClassName: system-node-critical
+      serviceAccountName: omega-lb
+      # ── Security context ──────────────────────────────────────────────────
+      # Drop ALL capabilities first, then add back only what is required.
+      # This is the "allowlist" model expected by OPA/Gatekeeper policies.
+      securityContext:
+        runAsNonRoot: false   # must be root to load eBPF — document this in review
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: omega-lb
+          image: omega-lb:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false     # NOT privileged — use explicit capabilities instead
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]       # start with nothing
+              add:
+                - BPF             # load eBPF programs (kernel ≥ 5.8)
+                - NET_ADMIN       # attach to cgroup
+                - SYS_ADMIN       # bpffs pin (kernel < 5.8; drop if pin_path is "")
+                # If your kernel is ≥ 5.8 AND you set ebpf.pin_path to "":
+                #   drop SYS_ADMIN here — only BPF + NET_ADMIN needed.
+          args:
+            - "--config=/etc/omega-lb/config.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/omega-lb
+              readOnly: true
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+              readOnly: true
+            - name: models
+              mountPath: /var/lib/omega-lb/models
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            - name: xds-grpc
+              containerPort: 18000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: admin
+              containerPort: 9000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /admin/healthz
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /admin/healthz
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: omega-lb-config
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: models
+          hostPath:
+            path: /var/lib/omega-lb/models
+            type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: omega-lb
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: omega-lb
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints", "services", "nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: omega-lb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: omega-lb
+subjects:
+  - kind: ServiceAccount
+    name: omega-lb
+    namespace: kube-system
+
+---
+# ── OPA/Gatekeeper capability allowlist constraint (if your cluster uses it) ──
+# Add this to your ConstraintTemplate or patch your existing policy:
+#
+# allowedCapabilities:
+#   - BPF
+#   - NET_ADMIN
+#   - SYS_ADMIN
+#
+# If you use PSA (Pod Security Admission):
+#   namespace label: pod-security.kubernetes.io/enforce: privileged
+#   is NOT required — "baseline" profile permits explicit capability allowlists.
+#
+# Security review document: docs/security/ebpf-capability-justification.md

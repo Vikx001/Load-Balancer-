@@ -1,0 +1,187 @@
+---
+# Omega-LB DaemonSet — Zero-Capability NGINX Fallback Mode
+# ─────────────────────────────────────────────────────────────────────────────
+# Use this manifest when:
+#   • The cluster security policy blocks CAP_BPF / CAP_NET_ADMIN / CAP_SYS_ADMIN
+#   • You are on GKE Autopilot, EKS Fargate, or another managed node-less cluster
+#   • Security review for eBPF capabilities has not been approved yet
+#   • You want to deploy NOW and upgrade to eBPF mode after security approval
+#
+# WHAT WORKS IN FALLBACK MODE:
+#   ✓ Dynamic backend discovery (same Kubernetes API watch as eBPF mode)
+#   ✓ H&A ring weight calculation (ring.Manager runs in userspace)
+#   ✓ Health checker (TCP + HTTP active health, passive error tracking)
+#   ✓ Metrics (Prometheus endpoint on :9090)
+#   ✓ RL shadow mode for model training (stage 4)
+#   ✓ Admin API (explain, mode, healthz)
+#   ✓ Runs as UID 1000 (non-root), no hostNetwork, no capabilities
+#
+# WHAT IS DEGRADED IN FALLBACK MODE:
+#   ✗ eBPF kernel dispatch: ~4µs overhead per request (vs ~40ns for sockops)
+#   ✗ Kernel-side circuit breaker: 50ms detection → replaced by 2s health check
+#   ✗ NUMA-aware ring and Maglev O(1) lookup (not needed without eBPF)
+#   ✗ Per-CPU map metrics (replaced by NGINX log-based metrics)
+#
+# HOW TO UPGRADE TO eBPF MODE:
+#   1. Get capabilities approved (include ebpf-capability-justification.md)
+#   2. Apply daemonset-restricted.yaml
+#   3. Ring state is preserved in the ConfigMap; no backend reconfiguration needed
+#
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: omega-lb-fallback
+  namespace: kube-system
+  labels:
+    app: omega-lb
+    mode: fallback
+spec:
+  selector:
+    matchLabels:
+      app: omega-lb
+      mode: fallback
+  template:
+    metadata:
+      labels:
+        app: omega-lb
+        mode: fallback
+    spec:
+      hostNetwork: false      # NOT required — fallback uses standard pod networking
+      hostPID: false
+      tolerations:
+        - operator: Exists
+      serviceAccountName: omega-lb
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: omega-lb
+          image: omega-lb:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]   # zero capabilities required for fallback mode
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: OMEGALB_FALLBACK_MODE
+              value: "nginx"   # triggers NginxWriter instead of eBPF loader
+          args:
+            - "--config=/etc/omega-lb/config.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/omega-lb
+              readOnly: true
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+            - name: tmp
+              mountPath: /tmp
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: admin
+              containerPort: 9000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /admin/healthz
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+        # NGINX sidecar — serves as the actual proxy in fallback mode
+        - name: nginx
+          image: nginx:1.25-alpine
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]   # bind to port 80/443
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: nginx-run
+              mountPath: /var/run
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "1000m"
+              memory: "256Mi"
+
+      volumes:
+        - name: config
+          configMap:
+            name: omega-lb-fallback-config
+        - name: nginx-conf
+          emptyDir: {}      # written by omega-lb sidecar, read by nginx sidecar
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: omega-lb-fallback-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    stage: 3
+    mode: kubernetes
+    ebpf:
+      object_dir: ""    # empty = skip eBPF loader entirely
+      cgroup_path: ""
+      pin_path: ""
+    ring:
+      vnodes_per_server: 150
+      bounded_load_beta: 1.25
+      adjust_every_n: 100
+      adjust_threshold: 1.30
+    rl:
+      enabled: false
+    rate_limit:
+      enabled: false
+    health:
+      active_interval_s: 2
+      fail_threshold: 3
+      passive_error_pct: 0.10
+    metrics:
+      max_label_values: 50
+      path_aggregation: true
+      prometheus_listen_addr: ":9090"
+    admin:
+      listen_addr: ":9000"
+      flight_recorder_capacity: 5000
+    xds:
+      listen_addr: ":18000"

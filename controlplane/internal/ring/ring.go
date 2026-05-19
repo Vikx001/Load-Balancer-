@@ -34,6 +34,11 @@ type Backend struct {
 	ActiveReqs  int64
 	CapacityMax int64 // max active connections / CPU threshold
 	Health      bool
+	// Stateful marks a backend as serving stateful traffic (auth sessions,
+	// WebSockets, DB connections).  H&A vnode adjustment is suppressed for
+	// stateful backends to preserve session affinity.  Use the AffinityTable
+	// for routing; only adjust weight via traffic mirroring.
+	Stateful    bool
 }
 
 // VNode is a position on the ring.
@@ -50,6 +55,8 @@ type Manager struct {
 	backends map[uint32]*Backend // id → backend
 	ring     []vnode             // sorted by pos
 	reqCount int64               // rolling counter for adjust trigger
+	affinity *AffinityTable      // session sticky routing (stateful services)
+	slowStart *SlowStartController // thundering herd protection on recovery
 }
 
 // NewManager constructs a ring Manager.
@@ -61,9 +68,16 @@ func NewManager(cfg config.RingConfig, log *zap.Logger) (*Manager, error) {
 		cfg.BoundedLoadBeta = betaBounded
 	}
 	return &Manager{
-		cfg:      cfg,
-		log:      log,
-		backends: make(map[uint32]*Backend),
+		cfg:       cfg,
+		log:       log,
+		backends:  make(map[uint32]*Backend),
+		affinity:  NewAffinityTable(0, 0, log), // 30min TTL, 1M sessions
+		slowStart: newSlowStartController(
+			cfg.SlowStartBatchSize,
+			cfg.SlowStartIntervalS,
+			cfg.SlowStartMaxErrorRatePct,
+			log,
+		),
 	}, nil
 }
 
@@ -71,13 +85,28 @@ func NewManager(cfg config.RingConfig, log *zap.Logger) (*Manager, error) {
 func (m *Manager) AddBackend(b *Backend) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	b.VnodeCount = m.cfg.VnodesPerServer
+	if _, exists := m.backends[b.ID]; !exists {
+		b.VnodeCount = m.cfg.VnodesPerServer
+	}
 	m.backends[b.ID] = b
 	m.rebuild()
 	m.log.Info("backend added to ring",
 		zap.Uint32("id", b.ID),
 		zap.Int("vnodes", b.VnodeCount),
 	)
+}
+
+// BackendInfo returns a copy of the Backend struct for the given ID.
+// Returns nil if the backend is not registered.
+func (m *Manager) BackendInfo(id uint32) *Backend {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	b, ok := m.backends[id]
+	if !ok {
+		return nil
+	}
+	copy := *b
+	return &copy
 }
 
 // RemoveBackend removes a backend from the ring.
@@ -228,12 +257,15 @@ func (m *Manager) rebuild() {
 // adjust implements the H&A self-adjustment: move a vnode from the most
 // loaded server toward the least loaded if the most loaded exceeds threshold.
 // Must be called under mu.Lock().
+// NOTE: Stateful backends are excluded from vnode adjustment — their vnode
+// count is never changed by H&A.  Adjusting stateful backends would silently
+// break session affinity for in-flight sessions.
 func (m *Manager) adjust() {
 	mean := float64(m.totalActiveReqs()) / float64(max64(int64(len(m.backends)), 1))
 	var hottest, coolest *Backend
 	for _, b := range m.backends {
-		if !b.Health {
-			continue
+		if !b.Health || b.Stateful {
+			continue // never adjust stateful backends
 		}
 		if hottest == nil || b.ActiveReqs > hottest.ActiveReqs {
 			hottest = b

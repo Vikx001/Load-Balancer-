@@ -2,6 +2,16 @@
 // Layer 0 — filter_manager: L7 protocol parser and rate-limit gate
 // Tail-calls into route_manager on success.
 // Hooks: BPF_PROG_TYPE_SOCK_OPS / MSG_SENDMSG
+//
+// ─── VERIFIER SAFETY ─────────────────────────────────────────────────────────
+// This program is the HEAD of the 5-program tail-call chain.  It resets the
+// per-CPU tail-call depth counter to 0 on every entry so downstream programs
+// can detect and abort abnormally deep chains (see TAIL_CALL_DEPTH_MAX in
+// omega_maps.h).
+//
+// The rate-limit token consumption uses __sync_fetch_and_sub() (an atomic CPU
+// instruction) on a plain BPF_MAP_TYPE_HASH value.  This is correct: it avoids
+// the read-modify-write race that would occur with a non-atomic decrement.
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
@@ -86,6 +96,22 @@ struct {
     __type(value, struct request_ctx);
 } scratch_map SEC(".maps");
 
+// ─── Tail-call depth counter (per-CPU) ────────────────────────────────────
+// Owned by filter_manager (chain head).  All other programs reference this
+// map via an extern declaration.  filter_manager resets the counter to 0 on
+// every entry so the guard is accurate even if a previous chain aborted early.
+//
+// Kernel limit: 33.  We budget 30 (TAIL_CALL_DEPTH_MAX) to leave a safety
+// margin of 3 for future kernel overhead.  Programs abort the chain and return
+// SK_PASS (fail-open) if depth ≥ TAIL_CALL_DEPTH_MAX to protect production
+// traffic at the cost of missing telemetry.
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u32);
+} tail_depth_map SEC(".maps");
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 static __always_inline int consume_token(__u32 service_id)
 {
@@ -116,7 +142,14 @@ int filter_manager(struct bpf_sock_ops *skops)
     if (skops->op != BPF_SOCK_OPS_TX_SENDMSG_CB)
         return SK_PASS;
 
+    // ── Tail-call depth reset ────────────────────────────────────────────
+    // This program is the chain head.  Reset the per-CPU depth counter to 0
+    // before starting so downstream programs see an accurate depth value,
+    // even if a previous chain terminated abnormally without resetting.
     __u32 zero = 0;
+    __u32 *depth = bpf_map_lookup_elem(&tail_depth_map, &zero);
+    if (depth)
+        *depth = 0;
     struct request_ctx *ctx = bpf_map_lookup_elem(&scratch_map, &zero);
     if (!ctx)
         return SK_PASS;

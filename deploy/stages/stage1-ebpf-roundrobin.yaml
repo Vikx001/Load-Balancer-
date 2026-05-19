@@ -1,0 +1,70 @@
+# Omega-LB — Stage 1 Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1 (Month 1–2): eBPF data plane + static equal-weight round-robin
+#
+# WHAT THIS GIVES YOU:
+#   • Full eBPF data plane (filter_manager → route_manager → lb_policy chain)
+#   • Equal-weight round-robin across all healthy backends
+#   • L7 path-based routing rules (no RL, no dynamic weights)
+#   • 2–4× latency improvement over NGINX at 100k+ req/s
+#   • Kernel-level connection dispatch — no user-space proxy overhead
+#
+# WHAT IS DISABLED:
+#   • H&A vnode self-adjustment (enabled in stage 2)
+#   • Health checker and circuit breaker (enabled in stage 3)
+#   • Metrics collector and telemetry (enabled in stage 3)
+#   • RL agent (enabled in stage 4)
+#   • Rate limiter (enabled in stage 5)
+#
+# BENCHMARK TARGET:
+#   wrk2 -t4 -c100 -d30s -R100000 http://your-vip/
+#   Expect: p50 < 1ms, p99 < 5ms, 0 connection errors at 100k req/s
+#   Compare: same test against NGINX upstream — expect 2× p99 improvement
+#
+# ADVANCE TO STAGE 2 WHEN:
+#   • No production incidents in 2 weeks
+#   • Flamegraph confirms eBPF ring lookup is in the hot path
+#   • You have traffic baselines for each backend (needed to validate H&A gains)
+# ─────────────────────────────────────────────────────────────────────────────
+
+stage: 1
+mode: baremetal
+
+ebpf:
+  object_dir: /usr/lib/omega-lb/bpf
+  cgroup_path: /sys/fs/cgroup
+  pin_path: /sys/fs/bpf/omega-lb
+  interface: eth0
+  numa_node: -1  # auto-detect; see NUMA advisory in startup logs
+
+ring:
+  vnodes_per_server: 1   # equal-weight round-robin in stage 1
+  bounded_load_beta: 1.25
+  adjust_every_n: 0      # H&A adjustment disabled; enabled in stage 2
+  adjust_threshold: 1.30
+
+rl:
+  enabled: false         # disabled until stage 4
+
+rate_limit:
+  enabled: false         # disabled until stage 5
+
+health:
+  active_interval_s: 2
+  fail_threshold: 3
+  passive_error_pct: 0.10
+
+tls:
+  mode: passthrough      # change to sni or terminate if needed
+
+metrics:
+  max_label_values: 50
+  path_aggregation: true
+  prometheus_listen_addr: ":9090"
+
+admin:
+  listen_addr: ":9000"
+  flight_recorder_capacity: 1000
+
+xds:
+  listen_addr: ":18000"

@@ -68,11 +68,54 @@ bench-http: ## Run HTTP benchmarks with wrk2 (requires running instance)
 
 # ─── Kubernetes ───────────────────────────────────────────────────────────────
 
-k8s-deploy: docker-push ## Deploy to Kubernetes
+k8s-deploy: docker-push ## Deploy to Kubernetes (full privileged — use k8s-deploy-restricted for PSA clusters)
 	kubectl apply -f $(DEPLOY_DIR)/kubernetes/daemonset.yaml
+
+k8s-deploy-restricted: docker-push ## Deploy to Kubernetes with minimal capabilities (PSA/OPA-compatible)
+	kubectl apply -f $(DEPLOY_DIR)/kubernetes/daemonset-restricted.yaml
+
+k8s-deploy-fallback: ## Deploy non-eBPF NGINX fallback mode (no capabilities required)
+	kubectl apply -f $(DEPLOY_DIR)/kubernetes/daemonset-fallback.yaml
 
 k8s-teardown: ## Remove from Kubernetes
 	kubectl delete -f $(DEPLOY_DIR)/kubernetes/daemonset.yaml
+
+# ─── Staged Deployment ────────────────────────────────────────────────────────
+# Each stage is independently deployable and benchmarkable.
+# Do NOT advance without 2 weeks of production metrics from the current stage.
+# See deploy/stages/ for per-stage config files and advance criteria.
+
+.PHONY: stage1 stage2 stage3 stage4 stage5 stage-check
+
+stage1: build ## Build + launch Stage 1 (eBPF + static round-robin)
+	@echo "  [Stage 1] eBPF data plane + static equal-weight round-robin"
+	@echo "  Config: deploy/stages/stage1-ebpf-roundrobin.yaml"
+	./bin/omegalb --config deploy/stages/stage1-ebpf-roundrobin.yaml
+
+stage2: build ## Build + launch Stage 2 (H&A ring)
+	@echo "  [Stage 2] H&A consistent hash ring"
+	@echo "  Config: deploy/stages/stage2-ha-ring.yaml"
+	./bin/omegalb --config deploy/stages/stage2-ha-ring.yaml
+
+stage3: build ## Build + launch Stage 3 (health checker + metrics)
+	@echo "  [Stage 3] health checker + metrics + circuit breaker"
+	@echo "  Config: deploy/stages/stage3-health-metrics.yaml"
+	./bin/omegalb --config deploy/stages/stage3-health-metrics.yaml
+
+stage4: build ## Build + launch Stage 4 (RL shadow mode)
+	@echo "  [Stage 4] RL agent in shadow/observe mode"
+	@echo "  Config: deploy/stages/stage4-rl-shadow.yaml"
+	./bin/omegalb --config deploy/stages/stage4-rl-shadow.yaml
+
+stage5: build ## Build + launch Stage 5 (RL live control)
+	@echo "  [Stage 5] RL agent live traffic control"
+	@echo "  WARNING: run stage 4 for 4+ weeks before advancing"
+	@echo "  Config: deploy/stages/stage5-rl-live.yaml"
+	./bin/omegalb --config deploy/stages/stage5-rl-live.yaml
+
+stage-check: ## Print which stage is configured in the running daemon
+	@curl -sf http://localhost:9090/metrics | grep omega_lb_stage || \
+		echo "(daemon not running; check deploy/stages/*.yaml for stage config)"
 
 # ─── Quality ──────────────────────────────────────────────────────────────────
 

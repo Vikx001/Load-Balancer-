@@ -19,6 +19,12 @@ type BackendEndpoint struct {
 	ID          uint32
 	HealthURL   string // e.g. "http://10.0.0.1:8080/healthz"
 	FailCount   int
+	// consecutiveSuccesses counts unbroken successful health checks since the last
+	// failure or registration.  Slow-start begins after minSuccessesBeforeRestore
+	// (default 60) consecutive successes following a backend recovery, ensuring
+	// the cache is warm before full traffic is applied.  The counter is reset to
+	// 0 on every failure.
+	consecutiveSuccesses int
 	mu          sync.Mutex
 }
 
@@ -29,6 +35,10 @@ type Checker struct {
 	log       *zap.Logger
 	endpoints sync.Map // uint32 → *BackendEndpoint
 	client    *http.Client
+	// onRecovered is called after minSuccessesBeforeRestore consecutive successes
+	// following a backend DOWN→UP transition.  Used to trigger slow-start.
+	// Populated by the daemon when wiring components.
+	onRecovered func(backendID uint32)
 }
 
 // NewChecker constructs the health checker.
@@ -45,6 +55,12 @@ func NewChecker(cfg config.HealthConfig, rm *ring.Manager, log *zap.Logger) *Che
 			},
 		},
 	}
+}
+
+// SetRecoveryCallback sets the function called when a backend is considered
+// ready for traffic after the consecutive-success warming period.
+func (c *Checker) SetRecoveryCallback(fn func(backendID uint32)) {
+	c.onRecovered = fn
 }
 
 // Register adds a backend endpoint for health checking.
@@ -105,17 +121,37 @@ func (c *Checker) markPass(ep *BackendEndpoint) {
 	ep.mu.Lock()
 	wasDown := ep.FailCount >= c.cfg.FailThreshold
 	ep.FailCount = 0
+	ep.consecutiveSuccesses++
+	successes := ep.consecutiveSuccesses
 	ep.mu.Unlock()
 
+	// If the backend was down and just came back, re-enable health in the ring.
 	if wasDown {
 		c.ring.SetHealth(ep.ID, true)
-		c.log.Info("backend recovered", zap.Uint32("id", ep.ID))
+		c.log.Info("backend UP", zap.Uint32("id", ep.ID))
+	}
+
+	// After minSuccessesBeforeRestore consecutive successes the backend has proved
+	// it can handle traffic: trigger slow-start vnode restoration.
+	min := c.cfg.MinSuccessesBeforeRestore
+	if min <= 0 {
+		min = 60 // default: ~2 min at 2s poll interval
+	}
+	if successes == min {
+		c.log.Info("backend warmed up; beginning slow-start",
+			zap.Uint32("id", ep.ID),
+			zap.Int("consecutive_successes", successes),
+		)
+		if c.onRecovered != nil {
+			c.onRecovered(ep.ID)
+		}
 	}
 }
 
 func (c *Checker) markFail(ep *BackendEndpoint, err error) {
 	ep.mu.Lock()
 	ep.FailCount++
+	ep.consecutiveSuccesses = 0 // reset warmup counter on any failure
 	failed := ep.FailCount >= c.cfg.FailThreshold
 	ep.mu.Unlock()
 

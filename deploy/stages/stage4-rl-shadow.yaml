@@ -1,0 +1,93 @@
+# Omega-LB — Stage 4 Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 4 (Month 6–8): RL agent in shadow mode
+#
+# WHAT THIS ADDS over Stage 3:
+#   • PPO + KAN actor loaded and running, BUT in ModeAssisted (shadow mode)
+#   • Agent observes traffic, computes weight recommendations, logs them
+#   • Agent does NOT modify ring weights — routing unchanged from Stage 3
+#   • Collect shadow recommendations vs actual outcomes for offline evaluation
+#   • CBF safety projector active (will enforce constraints when stage 5 activates)
+#   • Model store with version tracking and hot-reload (no restart needed to update)
+#
+# HOW TO EVALUATE SHADOW RECOMMENDATIONS:
+#   # Watch what the agent WOULD have done
+#   curl -s http://your-lb:9000/admin/mode | jq .
+#   # → {"mode":"ASSISTED","model_version":"v1.0.0","effective_at":"..."}
+#   
+#   # Compare agent's preferred backends against actual routing outcomes
+#   # in the flight recorder:
+#   curl -s "http://your-lb:9000/admin/explain/recent?n=100" | \
+#     jq '[.[] | {backend:.backend_id, latency:.latency_ns, error:.error}]'
+#
+# ADVANCE TO STAGE 5 WHEN (ALL conditions required):
+#   1. Shadow mode has been running for 4+ weeks
+#   2. Agent recommendations have lower mean latency than actual ring decisions
+#      (compute from flight recorder: agent would pick backend X; actual picked Y;
+#       backend X's latency was lower in 70%+ of cases)
+#   3. No recommendation would have violated CBF capacity constraints
+#   4. Model passes A/B test: canary 5% traffic with stage 5 config; p99 ≤ stage 3 p99
+# ─────────────────────────────────────────────────────────────────────────────
+
+stage: 4
+mode: baremetal
+
+ebpf:
+  object_dir: /usr/lib/omega-lb/bpf
+  cgroup_path: /sys/fs/cgroup
+  pin_path: /sys/fs/bpf/omega-lb
+  interface: eth0
+  numa_node: -1
+
+ring:
+  vnodes_per_server: 150
+  bounded_load_beta: 1.25
+  adjust_every_n: 100
+  adjust_threshold: 1.30
+  wal_path: /var/lib/omega-lb/ring.wal
+  slow_start_batch_size: 15
+  slow_start_interval_s: 30
+  slow_start_max_error_rate_pct: 1
+
+rl:
+  enabled: true
+  onnx_model_path: /var/lib/omega-lb/models/kan_actor.onnx
+  inference_timeout_ms: 5
+  step_interval_ms: 500
+  action_smoothing: 0.7
+  cbf_lambda: 0.5
+  capacity_pct_cap: 0.80
+  model_version: v1.0.0
+  model_store_path: /var/lib/omega-lb/models
+  hot_reload_watch_interval_s: 60   # check for new model version every 60s
+
+rate_limit:
+  enabled: false
+
+health:
+  active_interval_s: 2
+  fail_threshold: 3
+  passive_error_pct: 0.10
+  min_successes_before_restore: 60
+
+telemetry:
+  otlp_endpoint: "otel-collector.monitoring:4317"
+  export_interval_s: 10
+
+tls:
+  mode: passthrough
+
+metrics:
+  max_label_values: 50
+  path_aggregation: true
+  prometheus_listen_addr: ":9090"
+
+admin:
+  listen_addr: ":9000"
+  flight_recorder_capacity: 10000
+
+xds:
+  listen_addr: ":18000"
+
+consensus:
+  enabled: false

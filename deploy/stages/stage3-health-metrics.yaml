@@ -1,0 +1,80 @@
+# Omega-LB — Stage 3 Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3 (Month 4–5): Full Go daemon — health checker, metrics, circuit breaker
+#
+# WHAT THIS ADDS over Stage 2:
+#   • Active health checker (HTTP/2 + TCP): marks backends unhealthy in <6s
+#   • Kernel-side circuit breaker (eBPF): trips on 5 consecutive 5xx → ~50ms detection
+#   • eBPF ringbuf metrics collector: per-request latency, error rate, circuit state
+#   • Flight recorder: last 10,000 routing decisions queryable via admin API
+#   • OTLP telemetry exporter: sends to Prometheus + Grafana
+#   • Cardinality budget: caps label space to prevent OOM on Prometheus
+#   • i-sock pool drift monitor: alerts when eBPF/userspace maps diverge
+#   • Admin HTTP API: GET /admin/explain, GET/POST /admin/mode, GET /admin/healthz
+#
+# BENCHMARK TARGET:
+#   Inject a failing backend and measure detection latency:
+#     watch -n1 'curl -s http://your-vip/admin/explain/recent | jq .[0]'
+#   Expect: circuit trips within 50ms (eBPF) vs 6s (health checker alone)
+#
+# ADVANCE TO STAGE 4 WHEN:
+#   • Circuit breaker firing and recovering correctly in production
+#   • Flamegraph and admin API metrics baselines collected for 2+ weeks
+#   • ML team has completed simulation training on collected load traces
+#   • Model passes offline evaluation: >95% correct backend preference on held-out traces
+# ─────────────────────────────────────────────────────────────────────────────
+
+stage: 3
+mode: baremetal
+
+ebpf:
+  object_dir: /usr/lib/omega-lb/bpf
+  cgroup_path: /sys/fs/cgroup
+  pin_path: /sys/fs/bpf/omega-lb
+  interface: eth0
+  numa_node: -1
+
+ring:
+  vnodes_per_server: 150
+  bounded_load_beta: 1.25
+  adjust_every_n: 100
+  adjust_threshold: 1.30
+  wal_path: /var/lib/omega-lb/ring.wal
+  slow_start_batch_size: 15
+  slow_start_interval_s: 30
+  slow_start_max_error_rate_pct: 1
+
+rl:
+  enabled: false
+  model_store_path: /var/lib/omega-lb/models  # models accumulate here for stage 4
+
+rate_limit:
+  enabled: false
+
+health:
+  active_interval_s: 2
+  fail_threshold: 3
+  passive_error_pct: 0.10
+  min_successes_before_restore: 60
+
+telemetry:
+  otlp_endpoint: "otel-collector.monitoring:4317"
+  export_interval_s: 10
+
+tls:
+  mode: passthrough
+
+metrics:
+  max_label_values: 50
+  path_aggregation: true
+  prometheus_listen_addr: ":9090"
+
+admin:
+  listen_addr: ":9000"
+  flight_recorder_capacity: 10000
+
+xds:
+  listen_addr: ":18000"
+
+consensus:
+  enabled: false

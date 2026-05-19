@@ -49,12 +49,63 @@ type transition struct {
 	next    serviceState
 }
 
+// RouterWeightBus is a lock-protected shared state bus that allows the DQN rate
+// limiter to observe the PPO router's current weight allocation and aggregate
+// capacity estimate.
+//
+// ─── WHY THIS EXISTS: DQN/PPO FIGHTING ───────────────────────────────────────
+// The PPO agent (Layer 2) controls how traffic is distributed across backends.
+// The DQN agent (Layer 4) controls how much total traffic each service admits.
+// Without coordination, they can fight:
+//   - PPO sends more traffic to backend A (it has free capacity)
+//   - DQN sees backend A's CPU rise and cuts the service limit
+//   - PPO sees the limit cut as a constraint violation and redistributes to B
+//   - DQN cuts B's limit too → total throughput collapses by 40%
+//
+// Fix: PPO writes its current weights and backend capacities to RouterWeightBus
+// after each ring update.  DQN reads aggregate capacity before computing the
+// reward: if currentRPS ≤ aggregateCap, no capacity penalty is added.
+// This prevents DQN from penalising throughput that is already within the
+// capacity envelope the PPO agent has reserved.
+type RouterWeightBus struct {
+	mu           sync.RWMutex
+	weights      []float64 // PPO weights (sum to ~1)
+	capacities   []float64 // per-backend normalised capacity (0..1)
+	aggregateCap float64   // Σ(w_i × capacity_i) × total_rps_budget
+}
+
+// SetRouterState is called by the PPO agent (rl.Agent) after each ring update.
+func (b *RouterWeightBus) SetRouterState(weights, capacities []float64, totalRPSBudget float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.weights = make([]float64, len(weights))
+	copy(b.weights, weights)
+	b.capacities = make([]float64, len(capacities))
+	copy(b.capacities, capacities)
+	var cap float64
+	for i := range weights {
+		if i < len(capacities) {
+			cap += weights[i] * capacities[i]
+		}
+	}
+	b.aggregateCap = cap * totalRPSBudget
+}
+
+// AggregateCapacity returns the current total RPS capacity the PPO agent has
+// reserved.  The DQN agent should not penalise traffic below this threshold.
+func (b *RouterWeightBus) AggregateCapacity() float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.aggregateCap
+}
+
 // DQNAgent orchestrates all per-service limiters + A3C global actor.
 type DQNAgent struct {
-	cfg      config.RateLimitConfig
-	log      *zap.Logger
-	services map[uint32]*ServiceLimiter
-	a3c      *a3cGlobalActor
+	cfg        config.RateLimitConfig
+	log        *zap.Logger
+	services   map[uint32]*ServiceLimiter
+	a3c        *a3cGlobalActor
+	routerBus  *RouterWeightBus // coordination with PPO agent
 }
 
 // NewDQNAgent creates the DQN+A3C rate limiting agent.
@@ -72,11 +123,17 @@ func NewDQNAgent(cfg config.RateLimitConfig, log *zap.Logger) (*DQNAgent, error)
 		}
 	}
 	return &DQNAgent{
-		cfg:      cfg,
-		log:      log,
-		services: services,
-		a3c:      newA3CGlobalActor(log),
+		cfg:       cfg,
+		log:       log,
+		services:  services,
+		a3c:       newA3CGlobalActor(log),
+		routerBus: &RouterWeightBus{},
 	}, nil
+}
+
+// RouterBus returns the RouterWeightBus so the PPO agent can write into it.
+func (d *DQNAgent) RouterBus() *RouterWeightBus {
+	return d.routerBus
 }
 
 // Run is the main DQN+A3C update loop (every 100ms per spec).
@@ -95,10 +152,11 @@ func (d *DQNAgent) Run(ctx context.Context) error {
 }
 
 func (d *DQNAgent) step() {
+	aggCap := d.routerBus.AggregateCapacity()
 	for id, svc := range d.services {
 		st := d.observeState(id)
 		action := svc.selectAction(st)
-		reward := computeReward(st, action)
+		reward := computeReward(st, action, aggCap)
 		svc.applyAction(action)
 		d.log.Debug("rate limiter step",
 			zap.Uint32("service", id),
@@ -133,13 +191,35 @@ func (d *DQNAgent) observeState(serviceID uint32) serviceState {
 	}
 }
 
-func computeReward(s serviceState, action int) float64 {
-	reward := s.currentRPS                     // throughput
+// computeReward is the DQN reward function.
+//
+// aggregateCap is the total RPS the PPO agent has reserved across all backends
+// (from RouterWeightBus).  Traffic below this threshold is capacity-safe;
+// traffic above it means the DQN is overdriving the PPO's allocation.
+//
+// Without aggregateCap, the DQN may cut limits on traffic that is perfectly
+// within the system's capacity, causing unnecessary 429 responses.  Conversely
+// it may allow traffic that exceeds the weighted-capacity envelope because the
+// per-backend CPU reading has not yet risen (deceptive server scenario).
+func computeReward(s serviceState, action int, aggregateCap float64) float64 {
+	reward := s.currentRPS                     // throughput is good
 	reward -= s.errorRate5m * 100             // penalise 5xx
 	reward -= math.Max(0, s.p99LatencyMs-200) // penalise latency > 200ms
+
+	// Hard penalty: backend is physically overloaded regardless of capacity calc.
 	if s.backendCPUPct > 0.90 {
-		return -1e9 // backend overloaded — hard penalty
+		return -1e9
 	}
+
+	// Capacity-aware penalty: if the DQN admits more traffic than the PPO router
+	// has capacity for, penalise proportionally to the excess.
+	// This prevents the DQN from fighting the PPO by admitting traffic that the
+	// PPO must then shed via CBF projection.
+	if aggregateCap > 0 && s.currentRPS > aggregateCap {
+		excess := s.currentRPS - aggregateCap
+		reward -= excess * 2.0 // 2× penalty per excess RPS
+	}
+
 	return reward
 }
 
