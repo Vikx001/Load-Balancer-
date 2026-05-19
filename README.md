@@ -8,6 +8,153 @@ Omega-LB sits in front of your backends as a transparent reverse proxy. It route
 
 ---
 
+<details>
+<summary><strong>🟢 OMEGA-LB — LAYMAN'S DESCRIPTION</strong> (click to expand)</summary>
+
+<br>
+
+## What Is Omega-LB?
+
+Imagine you have a popular website or API. Thousands of requests hit it every second. You have, say, 4 servers to handle them. The question is: **which server handles which request?** That's what a load balancer does.
+
+A basic load balancer just takes turns — server 1, server 2, server 3, server 4, repeat. Omega-LB doesn't do that. It's a **smart load balancer** that watches what's happening in real time and makes intelligent decisions. It learns. It protects itself. It explains its own reasoning.
+
+---
+
+## The Simple Version
+
+**You have traffic coming in → Omega-LB sits in the middle → It routes it smartly to your backends.**
+
+```
+Your users / load generator
+          ↓
+    [ Omega-LB :8080 ]
+    ↙    ↓    ↘    ↘
+Server1 Server2 Server3 Server4
+```
+
+Point your app, browser, or load tester at `localhost:8080`. Omega-LB figures out the rest.
+
+---
+
+## How to Run It (3 steps)
+
+```bash
+git clone https://github.com/Vikx001/Load-Balancer-
+cd "Load-Balancer-"
+# Edit omega-lb.yaml — put in your server addresses
+./start.sh
+```
+
+- Proxy starts at **http://localhost:8080** — send traffic here
+- Dashboard opens at **http://localhost:8501** — watch everything in real time
+
+No Docker. No Kubernetes. No cloud account. Just Python 3.11+.
+
+---
+
+## The 5 Brains (Layers)
+
+Think of it as 5 decision-makers, each passing a "routing ticket" to the next one:
+
+### Brain 1 — The Fair Mapper (Consistent Hash Ring)
+When you join a queue at a supermarket, you mentally pick the shortest line. Brain 1 does this using a **hash ring** — it maps every request to a position on a circle, and each server owns a slice of that circle. It keeps the same user going to the same server (good for login sessions, shopping carts) while adapting its slice sizes when traffic gets uneven.
+
+> **Analogy:** A pie divided into slices. Busy server? Shrink its slice. Idle server? Give it more.
+
+### Brain 2 — The Safety Guard (Control Barrier Function)
+Even if Brain 1 says "send to Server 2", Brain 2 asks: *"But is Server 2 actually okay right now?"* It watches CPU, latency, and error rate for every server. If a server is getting overwhelmed (>80% utilized), Brain 2 mathematically **projects** the routing away from it — like a bumper that stops you from crashing.
+
+> **Analogy:** A traffic cop that redirects cars away from a street that's almost jammed, before it fully jams.
+
+### Brain 3 — The Learner (KAN Neural Network)
+This is an AI model (a Kolmogorov-Arnold Network) that learns patterns in your traffic. Unlike a black-box neural network, this one can write its own routing decision as a **readable math formula** — you can actually see and audit why it made a decision.
+
+> **Analogy:** A smart intern who not only makes good decisions but can also explain their reasoning in plain English, unlike a black box that just says "trust me."
+
+### Brain 4 — The Throttle (DQN Rate Limiter)
+This uses reinforcement learning — the same technique behind game-playing AIs like AlphaGo. It watches each server and decides whether to **expand, hold, or throttle** how many requests per second it sends. It learns over time what actions lead to good outcomes (low latency, low errors).
+
+> **Analogy:** A DJ adjusting the volume on each speaker independently — louder when the crowd responds well, quieter if it's getting distorted.
+
+### Brain 5 — The Predictor (Proactive Pre-distribution)
+This one looks 30 seconds ahead. If traffic is growing fast, it rebalances server assignments **before** any server gets overloaded, rather than reacting after the fact.
+
+> **Analogy:** A restaurant manager who sees a bus of 40 tourists arriving and starts seating people and alerting chefs before the bus even parks.
+
+---
+
+## The Dashboard
+
+A live visual panel that shows everything in real time:
+
+| Tab | What you see |
+|---|---|
+| **Overview** | Requests/sec, error rate, which servers are alive, live request log |
+| **Routing Policy** | How Brains 1–3 are distributing traffic right now |
+| **Rate Control** | Brain 4's throttle decisions per server |
+| **Health Checks** | p50/p99 latency, server health status |
+| **Setup** | Edit config, quick-start guide |
+
+It works **even without a running proxy** — it switches to a built-in simulation so you can explore the UI any time.
+
+---
+
+## The Production Engine (For Linux Servers)
+
+For real production use on Linux, there's a second, more powerful version of the same system:
+
+**Layer 0 — The Kernel Interceptor (eBPF)**
+Instead of routing in software (which adds ~4 microseconds per request), this hooks into the Linux kernel itself using eBPF — a way to run safe custom code directly in the kernel. Traffic is routed at the kernel level in **~40 nanoseconds** — 100× faster than the Python proxy. No packet copying, no userspace round-trips.
+
+**The Go Control Plane**
+A background daemon written in Go that:
+- Watches Kubernetes (or bare metal) for backend changes
+- Pushes ring configuration into the eBPF maps in real time
+- Runs health checks every 2 seconds
+- Manages RL model versions, safely promoting or rolling back
+
+---
+
+## The Safety Net (Everything That's Hardened)
+
+The system is built to survive real-world failures automatically:
+
+| Scenario | What happens |
+|---|---|
+| A server starts responding slowly | Circuit breaker opens; removed from the ring within 50ms |
+| The AI model makes bad decisions | CBF safety layer overrides it and keeps routing within safe bounds |
+| The AI hasn't seen this traffic pattern before | OOD detector notices and falls back to the simple hash ring |
+| eBPF can't load (kernel too old) | Preflight check tells you exactly what's wrong and how to fix it |
+| Enterprise Kubernetes blocks privileged containers | Deploy in NGINX fallback mode — zero capabilities needed |
+| Two daemons disagree on ring state | Raft-based consensus; one leader wins, others follow |
+| Metrics labels explode (thousands of unique URLs) | Cardinality guard caps labels; overflow buckets into `other` |
+
+---
+
+## Who This Is For
+
+- **You want to understand how production load balancers actually work** — every layer is readable code with comments explaining the algorithm
+- **You're building a system that needs smart traffic routing** — drop this in front of your backends
+- **You're doing ML/RL research on network control** — simulation environment and training scripts are all included
+- **You need to demo a working AI system** — `./start.sh` and it just works, with a live dashboard
+
+---
+
+## What It Is NOT
+
+- Not a replacement for HAProxy/Envoy/Nginx at Google scale (yet)
+- Not a managed cloud service — open-source, you run it yourself
+- Not a black box — every routing decision can be inspected, explained, and audited
+
+---
+
+**One sentence:** Omega-LB is a self-learning load balancer that routes your traffic intelligently, protects your servers from overload, explains its own decisions, runs in your kernel for near-zero overhead in production, and comes with a live dashboard — all open source, all local, no cloud required.
+
+</details>
+
+---
+
 ## What it looks like
 
 The dashboard auto-detects the running proxy and switches to **LIVE** mode (green dot). Without a proxy it falls back to a built-in **DEMO** simulation so you always have something to explore.
