@@ -4,6 +4,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"go.uber.org/zap"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/omega-lb/omega-lb/internal/admin"
 	"github.com/omega-lb/omega-lb/internal/config"
+	"github.com/omega-lb/omega-lb/internal/consensus"
 	"github.com/omega-lb/omega-lb/internal/health"
 	"github.com/omega-lb/omega-lb/internal/metrics"
 	"github.com/omega-lb/omega-lb/internal/observability"
@@ -23,20 +25,21 @@ import (
 
 // Daemon is the top-level orchestrator.
 type Daemon struct {
-	cfg      *config.Config
-	log      *zap.Logger
-	stage    int
-	ring     *ring.Manager
-	rl       *rl.Agent
-	rl_dqn   *ratelimit.DQNAgent
-	health   *health.Checker
-	metrics  *metrics.Collector
-	telem    *telemetry.Exporter
-	xds      *xds.Server
-	cb       *health.CircuitBreakerManager
-	pm       *ring.PoolMonitor
-	admin    *admin.Server
-	recorder *observability.FlightRecorder
+	cfg       *config.Config
+	log       *zap.Logger
+	stage     int
+	ring      *ring.Manager
+	rl        *rl.Agent
+	rl_dqn    *ratelimit.DQNAgent
+	health    *health.Checker
+	metrics   *metrics.Collector
+	telem     *telemetry.Exporter
+	xds       *xds.Server
+	cb        *health.CircuitBreakerManager
+	pm        *ring.PoolMonitor
+	admin     *admin.Server
+	recorder  *observability.FlightRecorder
+	consensus *consensus.Coordinator
 }
 
 // New constructs and wires all subsystems.
@@ -176,24 +179,65 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 	// ── Stage 3+: Admin HTTP API (explain + mode switch) ─────────────────
 	var adminSrv *admin.Server
 	if stage >= 3 {
-		adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, log)
+		adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, nil, log)
+		// consensus is wired below; the pointer will be set before Run() is called
+	}
+
+	// ── Stage 3+: Consensus coordinator (ring state sync) ─────────────────
+	// Single-node: MemStateStore (always leader, in-memory).
+	// Multi-node:  configure consensus.etcd_endpoints and add
+	//              go.etcd.io/etcd/client/v3 to go.mod, then swap in EtcdStore.
+	var coord *consensus.Coordinator
+	if stage >= 3 {
+		nodeID := cfg.Consensus.NodeID
+		if nodeID == "" {
+			if hostname, herr := os.Hostname(); herr == nil {
+				nodeID = hostname
+			} else {
+				nodeID = "omega-lb-single-node"
+			}
+		}
+		leaderKey := cfg.Consensus.LeaderKey
+		if leaderKey == "" {
+			leaderKey = "/omega-lb/leader"
+		}
+		stateKey := cfg.Consensus.RingStateKey
+		if stateKey == "" {
+			stateKey = "/omega-lb/ring-state"
+		}
+		ttl := cfg.Consensus.LockTTLSeconds
+		if ttl <= 0 {
+			ttl = 10
+		}
+		var store consensus.StateStore = consensus.NewMemStateStore()
+		if len(cfg.Consensus.EtcdEndpoints) > 0 {
+			log.Warn("etcd endpoints configured; using in-memory store (add go.etcd.io/etcd/client/v3 to go.mod for real etcd)",
+				zap.Strings("etcd_endpoints", cfg.Consensus.EtcdEndpoints),
+			)
+		}
+		coord = consensus.NewCoordinator(store, nodeID, leaderKey, stateKey, ttl, rm, log)
+		// back-fill coordinator into admin server so /admin/consensus works
+		if adminSrv != nil {
+			adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, coord, log)
+		}
 	}
 
 	return &Daemon{
-		cfg:      cfg,
-		log:      log,
-		stage:    stage,
-		ring:     rm,
-		rl:       agent,
-		rl_dqn:   dqn,
-		health:   hc,
-		metrics:  mc,
-		telem:    te,
-		xds:      xs,
-		cb:       cb,
-		pm:       pm,
-		admin:    adminSrv,
-		recorder: fr,
+		cfg:       cfg,
+		log:       log,
+		stage:     stage,
+		ring:      rm,
+		rl:        agent,
+		rl_dqn:    dqn,
+		health:    hc,
+		metrics:   mc,
+		telem:     te,
+		xds:       xs,
+		cb:        cb,
+		pm:        pm,
+		admin:     adminSrv,
+		recorder:  fr,
+		consensus: coord,
 	}, nil
 }
 
@@ -239,6 +283,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Stage 3+: Admin HTTP API (explain + mode)
 	if d.admin != nil {
 		g.Go(func() error { return d.admin.Run(ctx) })
+	}
+
+	// Stage 3+: Consensus coordinator (ring state sync across nodes)
+	if d.consensus != nil {
+		g.Go(func() error { return d.consensus.Run(ctx) })
 	}
 
 	// Stage 4+: RL control loop (shadow or live, set in New())

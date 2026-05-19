@@ -118,15 +118,15 @@ type RingStateSnapshot struct {
 // Coordinator manages leader election and ring state synchronization.
 // The zero value is not valid; use NewCoordinator.
 type Coordinator struct {
-	store      StateStore
-	nodeID     string
-	log        *zap.Logger
-	ring       *ring.Manager
-	isLeader   atomic.Bool
-	leaderKey  string
-	stateKey   string
-	lockTTL    int64 // seconds
-	lastVersion int64 // last applied snapshot version (monotonic guard)
+	store       StateStore
+	nodeID      string
+	log         *zap.Logger
+	ring        *ring.Manager
+	isLeader    atomic.Bool
+	leaderKey   string
+	stateKey    string
+	lockTTL     int64       // seconds
+	lastVersion atomic.Int64 // last applied snapshot version; atomic for race-free GetStatus
 }
 
 // NewCoordinator creates a Coordinator.
@@ -317,14 +317,15 @@ func (c *Coordinator) applySnapshot(data []byte) error {
 	}
 
 	// Monotonic guard: discard older snapshots
-	if snap.Version <= c.lastVersion {
+	last := c.lastVersion.Load()
+	if snap.Version <= last {
 		c.log.Debug("discarding stale ring snapshot",
 			zap.Int64("snapshot_version", snap.Version),
-			zap.Int64("last_applied", c.lastVersion),
+			zap.Int64("last_applied", last),
 		)
 		return nil
 	}
-	c.lastVersion = snap.Version
+	c.lastVersion.Store(snap.Version)
 
 	// Apply the snapshot to the ring.  For each backend in the snapshot:
 	//   • AddBackend if not known
@@ -351,4 +352,32 @@ func (c *Coordinator) applySnapshot(data []byte) error {
 		zap.Time("leader_updated_at", snap.UpdatedAt),
 	)
 	return nil
+}
+
+// ─── Status ───────────────────────────────────────────────────────────────────
+
+// Status is a snapshot of coordinator state for the admin API.
+type Status struct {
+	NodeID      string `json:"node_id"`
+	IsLeader    bool   `json:"is_leader"`
+	LastVersion int64  `json:"last_applied_version"`
+	LeaderKey   string `json:"leader_key"`
+	StateKey    string `json:"state_key"`
+	StoreType   string `json:"store_type"` // "memory" | "etcd"
+}
+
+// GetStatus returns a point-in-time snapshot of the coordinator's state.
+func (c *Coordinator) GetStatus() Status {
+	storeType := "etcd"
+	if _, ok := c.store.(*MemStateStore); ok {
+		storeType = "memory"
+	}
+	return Status{
+		NodeID:      c.nodeID,
+		IsLeader:    c.isLeader.Load(),
+		LastVersion: c.lastVersion.Load(),
+		LeaderKey:   c.leaderKey,
+		StateKey:    c.stateKey,
+		StoreType:   storeType,
+	}
 }

@@ -29,32 +29,46 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/omega-lb/omega-lb/internal/consensus"
 	"github.com/omega-lb/omega-lb/internal/observability"
+	"github.com/omega-lb/omega-lb/internal/ring"
 	"github.com/omega-lb/omega-lb/internal/rl"
 )
 
 // Server is the HTTP admin API server.
 type Server struct {
-	addr     string
-	recorder *observability.FlightRecorder
-	agent    *rl.Agent
-	log      *zap.Logger
+	addr        string
+	recorder    *observability.FlightRecorder
+	agent       *rl.Agent
+	ring        *ring.Manager
+	coordinator *consensus.Coordinator
+	log         *zap.Logger
 }
 
 // NewServer creates an admin HTTP server.
-// recorder and agent may be nil if those subsystems are disabled.
-func NewServer(addr string, recorder *observability.FlightRecorder, agent *rl.Agent, log *zap.Logger) *Server {
+// recorder, agent, ring, and coordinator may be nil if those subsystems are disabled.
+func NewServer(
+	addr string,
+	recorder *observability.FlightRecorder,
+	agent *rl.Agent,
+	rm *ring.Manager,
+	coord *consensus.Coordinator,
+	log *zap.Logger,
+) *Server {
 	return &Server{
-		addr:     addr,
-		recorder: recorder,
-		agent:    agent,
-		log:      log,
+		addr:        addr,
+		recorder:    recorder,
+		agent:       agent,
+		ring:        rm,
+		coordinator: coord,
+		log:         log,
 	}
 }
 
@@ -65,6 +79,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/admin/explain/recent", s.handleExplainRecent)
 	mux.HandleFunc("/admin/explain/backend", s.handleExplainBackend)
 	mux.HandleFunc("/admin/mode", s.handleMode)
+	mux.HandleFunc("/admin/ring", s.handleRing)
+	mux.HandleFunc("/admin/consensus", s.handleConsensus)
 
 	srv := &http.Server{
 		Addr:         s.addr,
@@ -79,7 +95,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	s.log.Info("admin API server started",
 		zap.String("addr", s.addr),
-		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode"),
+		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode /admin/ring /admin/consensus"),
 	)
 
 	select {
@@ -286,4 +302,96 @@ func modeString(m rl.AgentMode) string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+// ─── GET /admin/ring ──────────────────────────────────────────────────────────
+//
+// Returns current ring topology: all backends with vnode counts, weight shares,
+// and health status.  Use this to answer "why is backend-2 getting 40% of traffic?"
+//
+// Example:
+//   $ curl http://localhost:9000/admin/ring | jq '.backends[] | {name: .id, vnodes, weight_pct, healthy}'
+
+type ringBackendInfo struct {
+	ID        uint32  `json:"id"`
+	IP        string  `json:"ip"`
+	Port      uint16  `json:"port"`
+	Vnodes    int     `json:"vnodes"`
+	WeightPct float64 `json:"weight_pct"` // percentage of total vnodes
+	Healthy   bool    `json:"healthy"`
+	Stateful  bool    `json:"stateful"`
+	ActiveReqs int64  `json:"active_reqs"`
+}
+
+type ringResponse struct {
+	Backends    []ringBackendInfo `json:"backends"`
+	TotalVnodes int               `json:"total_vnodes"`
+	BackendCount int              `json:"backend_count"`
+}
+
+func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.ring == nil {
+		http.Error(w, "ring manager not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ids := s.ring.Backends()
+	total := 0
+	backends := make([]ringBackendInfo, 0, len(ids))
+	for _, id := range ids {
+		b := s.ring.BackendInfo(id)
+		if b == nil {
+			continue
+		}
+		total += b.VnodeCount
+		backends = append(backends, ringBackendInfo{
+			ID:         b.ID,
+			IP:         fmt.Sprintf("%d.%d.%d.%d", b.IP[0], b.IP[1], b.IP[2], b.IP[3]),
+			Port:       b.Port,
+			Vnodes:     b.VnodeCount,
+			Healthy:    b.Health,
+			Stateful:   b.Stateful,
+			ActiveReqs: b.ActiveReqs,
+		})
+	}
+
+	// compute weight percentages after collecting total
+	for i := range backends {
+		if total > 0 {
+			backends[i].WeightPct = float64(backends[i].Vnodes) / float64(total) * 100.0
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ringResponse{
+		Backends:     backends,
+		TotalVnodes:  total,
+		BackendCount: len(backends),
+	})
+}
+
+// ─── GET /admin/consensus ─────────────────────────────────────────────────────
+//
+// Returns the consensus coordinator status: whether this node is the leader,
+// the last ring state version it applied, and the store backend type.
+//
+// Example:
+//   $ curl http://localhost:9000/admin/consensus | jq .
+//   → {"node_id":"node-1","is_leader":true,"last_applied_version":1716000000000,"store_type":"memory"}
+
+func (s *Server) handleConsensus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.coordinator == nil {
+		http.Error(w, "consensus coordinator not enabled (stage < 3)", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.coordinator.GetStatus())
 }
