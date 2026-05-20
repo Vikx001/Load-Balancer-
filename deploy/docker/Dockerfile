@@ -1,7 +1,7 @@
 FROM ubuntu:22.04 AS ebpf-builder
 
 RUN apt-get update && apt-get install -y \
-    clang-14 llvm-14 libbpf-dev linux-headers-generic bpftool \
+    clang-14 llvm-14 libbpf-dev linux-headers-generic linux-tools-common \
     make pkg-config && \
     ln -s /usr/bin/clang-14 /usr/bin/clang
 
