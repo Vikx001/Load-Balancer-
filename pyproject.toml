@@ -7,7 +7,14 @@ ignore = ["E501"]  # long lines are fine in a dashboard
 
 [tool.ruff.lint.per-file-ignores]
 # dashboard uses intentionally compact semicolon style for simulation code
-"dashboard/app.py" = ["E701", "E702"]
+# F541: f-strings without placeholders are intentional (HTML template strings)
+"dashboard/app.py" = ["E701", "E702", "F541"]
+# demo/ is compact simulation/research code — not production style
+"demo/**" = ["E401", "E701", "E702", "F401", "F841"]
+# ml/ is compact research training code — not production style
+"ml/**" = ["E401", "E702", "F401", "F841"]
+# tests use compact helpers; some imports are conditionally used
+"tests/**" = ["E401", "E702", "F401", "F841"]
 
 [tool.pytest.ini_options]
 # Discover all test_*.py files under tests/
