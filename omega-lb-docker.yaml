@@ -1,0 +1,39 @@
+# omega-lb-docker.yaml — config for Docker Compose demo stack
+# Backends addressed by service name (Docker's internal DNS)
+
+proxy:
+  host: "0.0.0.0"
+  port: 8080
+
+backends:
+  - host: "backend-0"
+    port: 9000
+    name: "backend-0"
+    zone: "local-a"
+
+  - host: "backend-1"
+    port: 9001
+    name: "backend-1"
+    zone: "local-b"
+
+  - host: "backend-2"
+    port: 9002
+    name: "backend-2"
+    zone: "local-c"
+
+  - host: "backend-3"
+    port: 9003
+    name: "backend-3"
+    zone: "local-a"
+
+kan:
+  model_path: "ml/models/kan_actor.onnx"
+
+cbf:
+  cap: 0.80
+  lambda: 0.5
+
+rate_limiting:
+  initial_rps: 1000
+  min_rps: 100
+  max_rps: 5000

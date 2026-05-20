@@ -12,10 +12,10 @@ BENCH_DIR   := bench
 EBPF_DIR    := ebpf/kern
 DEPLOY_DIR  := deploy
 
-.PHONY: help build build-ebpf build-go docker-build docker-run \
+.PHONY: help build build-ebpf build-go docker-build docker-run docker-demo \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
-        smoke reset dev health check clean
+        smoke reset dev health check clean download-model
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -40,6 +40,9 @@ docker-build: ## Build Docker image
 
 docker-run: docker-build ## Run full stack in Docker Compose
 	docker compose -f $(DEPLOY_DIR)/docker/docker-compose.yml up
+
+docker-demo: ## Run Python demo stack in Docker (no eBPF, works on macOS/Windows)
+	docker compose -f $(DEPLOY_DIR)/docker/docker-compose-demo.yml up --build
 
 docker-push: docker-build ## Push image to registry
 	docker push $(IMAGE)
@@ -169,6 +172,29 @@ from ml.dqn_a3c.train_dqn_a3c import train, DQNConfig; \
 c = DQNConfig(); c.total_steps=1000; \
 train(c, output_dir='/tmp/omega_smoke_models')"
 	@echo "  [smoke] training pipelines OK"
+
+# ─── Models ───────────────────────────────────────────────────────────────────
+
+MODEL_DIR   := ml/models
+MODEL_URL   ?= https://github.com/Vikx001/Load-Balancer-/releases/latest/download
+KAN_MODEL   := $(MODEL_DIR)/kan_actor.onnx
+DQN_MODEL   := $(MODEL_DIR)/dqn_rate_limiter.onnx
+
+.PHONY: download-model
+
+download-model: ## Download pre-trained ONNX models from GitHub Releases
+	@echo "  [models] downloading pre-trained models -> $(MODEL_DIR)/"
+	@mkdir -p $(MODEL_DIR)
+	@for model in kan_actor.onnx dqn_rate_limiter.onnx; do \
+	    dest="$(MODEL_DIR)/$$model"; \
+	    if [ -f "$$dest" ]; then \
+	        echo "    $$model already present, skipping"; \
+	    else \
+	        echo "    downloading $$model"; \
+	        curl -fsSL -o "$$dest" "$(MODEL_URL)/$$model" || \
+	            { echo "    WARNING: $$model not found in releases (run make smoke-train to generate locally)"; rm -f "$$dest"; }; \
+	    fi; \
+	done
 
 # ─── Clean ────────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,90 @@
+version: "3.9"
+# ─────────────────────────────────────────────────────────────────────────────
+# Omega-LB demo stack — Python proxy + 4 backends + Streamlit dashboard
+# No Linux kernel, no eBPF, no privileges required.
+#
+# Usage:
+#   docker compose -f deploy/docker/docker-compose-demo.yml up
+#
+# Then open:
+#   Proxy:     http://localhost:8080
+#   Dashboard: http://localhost:8501
+#   Status:    http://localhost:8080/_omega/status
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # Four aiohttp backends
+  backend-0:
+    image: hashicorp/http-echo:latest
+    command: ["-text=backend-0", "-listen=:9000"]
+    networks: [demo]
+
+  backend-1:
+    image: hashicorp/http-echo:latest
+    command: ["-text=backend-1", "-listen=:9001"]
+    networks: [demo]
+
+  backend-2:
+    image: hashicorp/http-echo:latest
+    command: ["-text=backend-2", "-listen=:9002"]
+    networks: [demo]
+
+  backend-3:
+    image: hashicorp/http-echo:latest
+    command: ["-text=backend-3", "-listen=:9003"]
+    networks: [demo]
+
+  # Omega-LB Python proxy
+  proxy:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["python", "-m", "demo.proxy"]
+    ports:
+      - "8080:8080"
+    environment:
+      - OMEGA_CONFIG=/app/omega-lb-docker.yaml
+    volumes:
+      - metrics:/app/demo
+    depends_on:
+      - backend-0
+      - backend-1
+      - backend-2
+      - backend-3
+    networks: [demo]
+    restart: unless-stopped
+
+  # Load generator
+  loadgen:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["python", "-m", "demo.loadgen"]
+    environment:
+      - OMEGA_PROXY_URL=http://proxy:8080
+    depends_on:
+      - proxy
+    networks: [demo]
+    restart: unless-stopped
+
+  # Streamlit dashboard
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - metrics:/app/demo
+    depends_on:
+      - proxy
+    networks: [demo]
+    restart: unless-stopped
+
+volumes:
+  metrics:
+
+networks:
+  demo:
+    driver: bridge

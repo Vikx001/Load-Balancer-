@@ -23,13 +23,16 @@ RUN if [ "$SKIP_EBPF" = "1" ]; then \
 # ─── Go builder ────────────────────────────────────────────────────────────
 FROM golang:1.22-bookworm AS go-builder
 
+# Support multi-arch builds: docker buildx build --platform linux/amd64,linux/arm64
+ARG TARGETARCH=amd64
+
 WORKDIR /src
 COPY controlplane/ ./controlplane/
 COPY --from=ebpf-builder /src/ebpf/kern/*.bpf.o /usr/lib/omega-lb/bpf/
 
 WORKDIR /src/controlplane
 RUN go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w" -o /usr/bin/omegalb ./cmd/omegalb
 
 # ─── Final image ───────────────────────────────────────────────────────────

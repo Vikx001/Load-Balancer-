@@ -9,7 +9,7 @@ Uses the ACTUAL system components:
   - Health checker (active HTTP probes)
 """
 import asyncio, aiohttp, aiohttp.web
-import sys, os, time, math, struct, json, threading
+import sys, os, ssl, signal, time, math, struct, json, threading
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -21,9 +21,9 @@ from ml.cbf import CBFProjector as _CBFProjector, SafetyMonitor
 # ─── Config loader ─────────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
-    """Load omega-lb.yaml from repo root, fall back to sensible defaults."""
+    """Load omega-lb.yaml from repo root (or OMEGA_CONFIG env var path), fall back to sensible defaults."""
     root = os.path.join(os.path.dirname(__file__), "..")
-    cfg_path = os.path.join(root, "omega-lb.yaml")
+    cfg_path = os.environ.get("OMEGA_CONFIG", os.path.join(root, "omega-lb.yaml"))
     defaults = {
         "proxy":        {"host": "127.0.0.1", "port": 8080},
         "backends":     [
@@ -79,6 +79,11 @@ _CBF_LAM   = float(_CFG["cbf"].get("lambda", 0.5))
 _INIT_RPS  = float(_CFG["rate_limiting"]["initial_rps"])
 _MIN_RPS   = float(_CFG["rate_limiting"].get("min_rps", 100))
 _MAX_RPS   = float(_CFG["rate_limiting"].get("max_rps", 5000))
+
+# TLS — optional; only active when cert_file + key_file are set in omega-lb.yaml
+_TLS_CERT  = _CFG.get("tls", {}).get("cert_file")
+_TLS_KEY   = _CFG.get("tls", {}).get("key_file")
+_TLS_UPSTREAM = _CFG.get("tls", {}).get("upstream_tls", False)  # verify upstream TLS?
 
 print(f"[proxy] Loaded {N} backend(s) from config:")
 for i, (host, port) in enumerate(BACKENDS):
@@ -332,12 +337,26 @@ class OmegaLBProxy:
         self._req_count = 0
 
     async def start(self):
+        # Per-backend connector pools — 100 connections each, with keepalive
+        upstream_ssl = ssl.create_default_context() if _TLS_UPSTREAM else False
+        self._connector = aiohttp.TCPConnector(
+            limit_per_host=100,
+            limit=500,
+            ttl_dns_cache=300,
+            keepalive_timeout=30,
+            ssl=upstream_ssl,
+        )
         self._session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(limit=500),
-            timeout=aiohttp.ClientTimeout(total=10)
+            connector=self._connector,
+            timeout=aiohttp.ClientTimeout(total=10, connect=2),
         )
         await self.health_chk.start()
         asyncio.create_task(self._control_loop())
+
+    async def close(self):
+        """Graceful shutdown — drain in-flight requests then close pool."""
+        await self._session.close()
+        await self._connector.close()
 
     async def _control_loop(self):
         """500ms control loop: KAN → CBF → ring update → proactive → DQN."""
@@ -382,54 +401,83 @@ class OmegaLBProxy:
                 text=json.dumps({"error": "rate_limited", "backend": backend_id})
             )
 
-        host, port = BACKENDS[backend_id]
-        url = f"http://{host}:{port}{request.path_qs}"
+        headers = {k: v for k, v in request.headers.items()
+                   if k.lower() not in ("host", "content-length")}
+        body = await request.read()
 
-        self.metrics.record_request_start(backend_id)
-        t_start = time.monotonic()
+        # Retry once on 5xx or network error — pick next healthy backend
+        tried = {backend_id}
+        for attempt in range(2):
+            host, port = BACKENDS[backend_id]
+            url = f"http://{host}:{port}{request.path_qs}"
+            self.metrics.record_request_start(backend_id)
+            t_start = time.monotonic()
+            try:
+                async with self._session.request(
+                    request.method, url,
+                    headers=headers,
+                    data=body or None,
+                ) as resp:
+                    latency_ms = (time.monotonic() - t_start) * 1000
+                    resp_body  = await resp.read()
+                    is_error   = resp.status >= 500
+                    self.metrics.record_request_end(backend_id, latency_ms, is_error,
+                                                      len(resp_body))
+                    if is_error and attempt == 0:
+                        # Try a different healthy backend
+                        alt = self._next_healthy(tried)
+                        if alt is not None:
+                            tried.add(alt)
+                            backend_id = alt
+                            continue
 
-        try:
-            headers = {k: v for k, v in request.headers.items()
-                       if k.lower() not in ("host", "content-length")}
-            body = await request.read()
-
-            async with self._session.request(
-                request.method, url,
-                headers=headers,
-                data=body or None,
-            ) as resp:
+                    resp_headers = {
+                        "X-Omega-Backend":    str(backend_id),
+                        "X-Omega-Latency-Ms": f"{latency_ms:.1f}",
+                        "X-Omega-Ring-Pos":   f"{self.ring.vnode_counts()[backend_id]:.0f}v",
+                        "X-Omega-Attempts":   str(attempt + 1),
+                    }
+                    safe_headers = {}
+                    for k, v in resp.headers.items():
+                        kl = k.lower()
+                        if kl not in ("content-encoding", "transfer-encoding",
+                                      "content-length", "connection"):
+                            safe_headers[k] = v
+                    safe_headers.update(resp_headers)
+                    return aiohttp.web.Response(
+                        status=resp.status,
+                        body=resp_body,
+                        headers=safe_headers,
+                    )
+            except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
                 latency_ms = (time.monotonic() - t_start) * 1000
-                resp_body  = await resp.read()
-                is_error   = resp.status >= 500
-                self.metrics.record_request_end(backend_id, latency_ms, is_error,
-                                                  len(resp_body))
-
-                # Inject routing metadata into response headers
-                resp_headers = {
-                    "X-Omega-Backend":    str(backend_id),
-                    "X-Omega-Latency-Ms": f"{latency_ms:.1f}",
-                    "X-Omega-Ring-Pos":   f"{self.ring.vnode_counts()[backend_id]:.0f}v",
-                }
-                safe_headers = {}
-                for k, v in resp.headers.items():
-                    kl = k.lower()
-                    if kl not in ("content-encoding", "transfer-encoding",
-                                  "content-length", "connection"):
-                        safe_headers[k] = v
-                safe_headers.update(resp_headers)
-
+                self.metrics.record_request_end(backend_id, latency_ms, True)
+                if attempt == 0:
+                    alt = self._next_healthy(tried)
+                    if alt is not None:
+                        tried.add(alt)
+                        backend_id = alt
+                        continue
                 return aiohttp.web.Response(
-                    status=resp.status,
-                    body=resp_body,
-                    headers=safe_headers,
+                    status=502,
+                    text=json.dumps({"error": str(e), "backend": backend_id})
                 )
-        except Exception as e:
-            latency_ms = (time.monotonic() - t_start) * 1000
-            self.metrics.record_request_end(backend_id, latency_ms, True)
-            return aiohttp.web.Response(
-                status=502,
-                text=json.dumps({"error": str(e), "backend": backend_id})
-            )
+            except Exception as e:
+                latency_ms = (time.monotonic() - t_start) * 1000
+                self.metrics.record_request_end(backend_id, latency_ms, True)
+                return aiohttp.web.Response(
+                    status=502,
+                    text=json.dumps({"error": str(e), "backend": backend_id})
+                )
+        # Should not reach here
+        return aiohttp.web.Response(status=502, text='{"error":"all retries exhausted"}')
+
+    def _next_healthy(self, exclude: set) -> int | None:
+        """Return a healthy backend not in the exclude set, or None."""
+        for i in range(N):
+            if i not in exclude and self.metrics.health[i]:
+                return i
+        return None
 
     async def handle_status(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
         """Live JSON status endpoint."""
@@ -494,20 +542,42 @@ async def run_proxy():
 
     runner = aiohttp.web.AppRunner(app)
     await runner.setup()
-    site = aiohttp.web.TCPSite(runner, _PROXY_HOST, _PROXY_PORT)
+
+    # TLS: load cert/key if configured in omega-lb.yaml under tls:
+    ssl_ctx = None
+    if _TLS_CERT and _TLS_KEY:
+        ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_ctx.load_cert_chain(_TLS_CERT, _TLS_KEY)
+        protocol = "https"
+    else:
+        protocol = "http"
+
+    site = aiohttp.web.TCPSite(runner, _PROXY_HOST, _PROXY_PORT, ssl_context=ssl_ctx)
     await site.start()
-    print(f"[proxy] Omega-LB proxy → http://{_PROXY_HOST}:{_PROXY_PORT}")
-    print(f"[proxy] Status          → http://{_PROXY_HOST}:{_PROXY_PORT}/_omega/status")
-    return runner
+    print(f"[proxy] Omega-LB proxy  -> {protocol}://{_PROXY_HOST}:{_PROXY_PORT}")
+    print(f"[proxy] Status          -> {protocol}://{_PROXY_HOST}:{_PROXY_PORT}/_omega/status")
+    if ssl_ctx:
+        print(f"[proxy] TLS             -> cert={_TLS_CERT}  key={_TLS_KEY}")
+    return runner, proxy
 
 
 async def main():
-    runner = await run_proxy()
-    try:
-        await asyncio.Event().wait()
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        print("[proxy] Shutting down...")
-        await runner.cleanup()
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def _handle_signal():
+        print("[proxy] Signal received -- draining and shutting down...")
+        stop_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _handle_signal)
+
+    runner, proxy = await run_proxy()
+    await stop_event.wait()
+    print("[proxy] Shutting down...")
+    await runner.cleanup()
+    await proxy.close()
+    print("[proxy] Stopped.")
 
 
 if __name__ == "__main__":

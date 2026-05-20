@@ -1,0 +1,31 @@
+# Dockerfile.demo — Python proxy + dashboard (no eBPF, no Linux required)
+# Works on macOS / Windows / Linux via Docker Desktop.
+#
+# Build:  docker build -f deploy/docker/Dockerfile.demo -t omega-lb-demo .
+# Run:    docker compose -f deploy/docker/docker-compose-demo.yml up
+
+FROM python:3.11-slim AS base
+WORKDIR /app
+
+# Install Python deps first (layer caching)
+COPY requirements.txt ./
+COPY ml/requirements.txt ./ml-requirements.txt
+COPY dashboard/requirements.txt ./dashboard-requirements.txt
+RUN pip install --no-cache-dir \
+    -r requirements.txt \
+    -r ml-requirements.txt \
+    -r dashboard-requirements.txt
+
+# Copy source
+COPY demo/       ./demo/
+COPY ml/         ./ml/
+COPY dashboard/  ./dashboard/
+COPY omega-lb.yaml ./
+
+# Pre-download model if it exists
+COPY ml/models/  ./ml/models/
+
+EXPOSE 8080 8501
+
+# Default: run proxy. Override CMD to run dashboard.
+CMD ["python", "-m", "demo.proxy"]
