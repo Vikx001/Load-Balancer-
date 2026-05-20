@@ -42,9 +42,13 @@ Thumbs.db
 
 # eBPF build artifacts
 ebpf/*.o
+ebpf/**/*.o
+ebpf/kern/*.bpf.o
 ebpf/vmlinux.h
+ebpf/headers/vmlinux.h
 
 # Go build
+bin/
 controlplane/bin/
 controlplane/vendor/
 

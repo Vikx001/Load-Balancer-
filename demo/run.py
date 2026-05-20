@@ -77,11 +77,11 @@ def _start(spec: dict) -> subprocess.Popen:
     # Wait a beat then check process is still alive
     time.sleep(spec["wait_s"])
     if proc.poll() is not None:
-        print(f"\n❌  {spec['name']} exited immediately (code {proc.returncode})!")
+        print(f"\nERROR: {spec['name']} exited immediately (code {proc.returncode})!")
         _teardown()
         sys.exit(1)
 
-    print(f"✅  {spec['name']} running (pid {proc.pid})")
+    print(f"  {spec['name']} running (pid {proc.pid})")
     return proc
 
 
@@ -112,10 +112,10 @@ def _check_dashboard():
     try:
         import urllib.request
         urllib.request.urlopen("http://localhost:8501", timeout=1)
-        print("\n✅  Dashboard already running → http://localhost:8501")
+        print("\n  Dashboard already running -> http://localhost:8501")
     except Exception:
         print(
-            "\n💡  Dashboard not detected. Open a new terminal and run:\n"
+            "\n  Dashboard not detected. Open a new terminal and run:\n"
             f"     {PYTHON} -m streamlit run dashboard/app.py\n"
             "   Then open http://localhost:8501 — it will switch to LIVE data automatically."
         )
@@ -123,7 +123,7 @@ def _check_dashboard():
 
 def main():
     print("=" * 60)
-    print("  ⚡  Omega-LB Real Demo")
+    print("  Omega-LB Real Demo")
     print("=" * 60)
     print(f"  Python:  {PYTHON}")
     print(f"  Root:    {ROOT}")
@@ -133,7 +133,7 @@ def main():
     try:
         import aiohttp  # noqa: F401
     except ImportError:
-        print("❌  aiohttp not found. Run:  pip install aiohttp")
+        print("ERROR: aiohttp not found. Run:  pip install aiohttp")
         sys.exit(1)
 
     for spec in LAUNCH_ORDER:
@@ -142,7 +142,7 @@ def main():
     _check_dashboard()
 
     print("\n" + "=" * 60)
-    print("  🟢  Full stack is running!")
+    print("  Full stack is running!")
     print("  Proxy  → http://127.0.0.1:8080")
     print("  Status → http://127.0.0.1:8080/_omega/status")
     print("  Dashboard → http://localhost:8501")
@@ -158,7 +158,7 @@ def main():
                         (s["name"] for s in LAUNCH_ORDER if PROCESSES.index(proc) == LAUNCH_ORDER.index(s)),
                         "unknown"
                     )
-                    print(f"\n⚠️   Process {name} (pid {proc.pid}) exited unexpectedly.")
+                    print(f"\nWARNING: Process {name} (pid {proc.pid}) exited unexpectedly.")
             time.sleep(5)
     except KeyboardInterrupt:
         pass

@@ -22,9 +22,15 @@ endif
 # ─── Compiler flags ───────────────────────────────────────────────────────────
 # -fno-stack-protector: stack canaries are not supported in BPF programs.
 # -mcpu=v3: enables BPF ISA v3 atomics (kernel ≥ 5.12); use v2 for 5.10 nodes.
+UNAME_M   := $(shell uname -m)
+ifeq ($(UNAME_M),aarch64)
+  TARGET_ARCH := arm64
+else
+  TARGET_ARCH := x86
+endif
 CFLAGS    := -O2 -g -target bpf \
              -I../headers \
-             -D__TARGET_ARCH_x86 \
+             -D__TARGET_ARCH_$(TARGET_ARCH) \
              -mcpu=v3 \
              -fno-stack-protector \
              $(KERNEL_FLAG)

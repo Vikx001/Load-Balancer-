@@ -299,7 +299,7 @@ T=st.tabs(["Overview","Routing Policy","Rate Control","Health Checks","Setup"])
 # ═══ TAB 1 — OVERVIEW ══════════════════════════════════════════════════════════
 with T[0]:
     if mode=="demo":
-        st.markdown(f'<div class="mode-banner-demo">⚡ <b>DEMO mode</b> — simulation data. Start the proxy to see real traffic. See the <b>Setup</b> tab.</div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="mode-banner-demo"><b>DEMO mode</b> — simulation data. Start the proxy to see real traffic. See the <b>Setup</b> tab.</div>',unsafe_allow_html=True)
     else:
         age=round(time.time()-d["proxy_ts"],1)
         st.markdown(f'<div class="mode-banner-live">● <b>LIVE</b> — connected to proxy · data age {age}s · tick #{d["tick"]}</div>',unsafe_allow_html=True)
@@ -329,7 +329,7 @@ with T[0]:
                    "threshold":{"line":{"color":C["red"],"width":2},"thickness":0.8,"value":80}}),row=1,col=i+1)
     fig_g.update_layout(height=220,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(t=20,b=10,l=10,r=10),font_family="Inter")
     st.markdown('<div class="card">',unsafe_allow_html=True)
-    st.plotly_chart(fig_g,use_container_width=True,config={"displayModeBar":False})
+    st.plotly_chart(fig_g,width="stretch",config={"displayModeBar":False})
     st.markdown('</div>',unsafe_allow_html=True)
 
     st.markdown("<div style='height:16px'></div>",unsafe_allow_html=True)
@@ -338,7 +338,7 @@ with T[0]:
         fig_rps=go.Figure(go.Scatter(x=ts_ax,y=rps,line=dict(color=C["blue"],width=1.5),fill="tozeroy",fillcolor="rgba(61,142,240,0.06)",hovertemplate="%{y:,.0f} req/s<extra></extra>"))
         fig_rps.update_layout(**{**PL,"title":dict(text="Requests per Second",font=dict(size=13,color=C["text"]),x=0,xanchor="left"),"height":240,"yaxis":dict(**PL["yaxis"],title=dict(text="req/s",font=dict(size=10))),"xaxis":dict(**PL["xaxis"],title=dict(text="seconds",font=dict(size=10)))})
         st.markdown('<div class="card">',unsafe_allow_html=True)
-        st.plotly_chart(fig_rps,use_container_width=True,config={"displayModeBar":False})
+        st.plotly_chart(fig_rps,width="stretch",config={"displayModeBar":False})
         st.markdown('</div>',unsafe_allow_html=True)
     with cb:
         st.markdown(f'<div class="sh">Live Request Log</div><div class="logpanel">{_log_html(logs,60)}</div>',unsafe_allow_html=True)
@@ -351,13 +351,13 @@ with T[0]:
             fig2.add_trace(go.Scatter(x=ts_ax,y=load[i]*100,name=NAMES[i],line=dict(color=COLS[i],width=1.5),opacity=0.3 if not health[i] else 1.,hovertemplate=f"{NAMES[i]}: %{{y:.1f}}%<extra></extra>"))
         fig2.add_hline(y=80,line=dict(color=C["red"],width=1,dash="dot"),annotation_text="CBF cap (80%)",annotation_font_size=10,annotation_font_color=C["red"])
         fig2.update_layout(**{**PL,"title":dict(text="Target Utilization (%)",font=dict(size=13,color=C["text"]),x=0,xanchor="left"),"height":230,"yaxis":dict(**PL["yaxis"],ticksuffix="%",range=[0,105])})
-        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig2,use_container_width=True,config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig2,width="stretch",config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
     with c3:
         fig3=go.Figure()
         for i in range(N):
             if health[i]: fig3.add_trace(go.Scatter(x=ts_ax,y=lat[i],name=NAMES[i],line=dict(color=COLS[i],width=1.5),hovertemplate=f"{NAMES[i]}: %{{y:.0f}} ms<extra></extra>"))
         fig3.update_layout(**{**PL,"title":dict(text="Latency — P50 (ms)",font=dict(size=13,color=C["text"]),x=0,xanchor="left"),"height":230,"yaxis":dict(**PL["yaxis"],ticksuffix=" ms")})
-        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig3,use_container_width=True,config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig3,width="stretch",config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
 
     st.markdown("<div style='height:16px'></div><div class='sh'>Registered Targets</div>",unsafe_allow_html=True)
     rows=""
@@ -395,7 +395,7 @@ with T[1]:
             r2,g2,b2=int(COLS[i][1:3],16),int(COLS[i][3:5],16),int(COLS[i][5:7],16)
             fig_w.add_trace(go.Scatter(x=ts_ax,y=wh[i]*100,name=NAMES[i],line=dict(color=COLS[i],width=1.5),fill="tonexty" if i>0 else "tozeroy",fillcolor=f"rgba({r2},{g2},{b2},0.1)",stackgroup="w",hovertemplate=f"{NAMES[i]}: %{{y:.1f}}%<extra></extra>"))
         fig_w.update_layout(**{**PL,"title":dict(text="KAN Routing Weight Distribution (%)",font=dict(size=13,color=C["text"]),x=0,xanchor="left"),"height":250,"yaxis":dict(**PL["yaxis"],ticksuffix="%",range=[0,105])})
-        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_w,use_container_width=True,config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_w,width="stretch",config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
 
         st.markdown('<div style="height:16px"></div><div class="sh">CBF Safety Projection</div>',unsafe_allow_html=True)
         eq_rows=""
@@ -412,7 +412,7 @@ with T[1]:
         fig_d=go.Figure(go.Pie(values=vnodes/vnodes.sum()*100,labels=NAMES,hole=0.62,marker=dict(colors=COLS,line=dict(color=C["surface"],width=2)),textinfo="none",sort=False,direction="clockwise",hovertemplate="<b>%{label}</b><br>%{value:.1f}%<extra></extra>"))
         fig_d.add_annotation(text=f"<b>{n_up}/{N}</b>",x=0.5,y=0.5,showarrow=False,font=dict(color=C["text"],family="Inter",size=20),align="center")
         fig_d.update_layout(height=200,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(t=8,b=8,l=8,r=8),showlegend=False)
-        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_d,use_container_width=True,config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_d,width="stretch",config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
 
         st.markdown('<div style="height:14px"></div><div class="sh">Hash Ring — vnodes</div>',unsafe_allow_html=True)
         tot=vnodes.sum()
@@ -442,7 +442,7 @@ with T[2]:
         fig_rl.add_trace(go.Scatter(x=ts_ax,y=uth,name=NAMES[i],line=dict(color=COLS[i],width=1.5),hovertemplate=f"{NAMES[i]}: %{{y:.1f}}%<extra></extra>"))
     fig_rl.add_hline(y=90,line=dict(color=C["red"],width=1,dash="dot"),annotation_text="Rate limit threshold",annotation_font_size=10,annotation_font_color=C["red"])
     fig_rl.update_layout(**{**PL,"title":dict(text="Token Bucket Utilization (%)",font=dict(size=13,color=C["text"]),x=0,xanchor="left"),"height":240,"yaxis":dict(**PL["yaxis"],ticksuffix="%",range=[0,105])})
-    st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_rl,use_container_width=True,config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_rl,width="stretch",config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
 
 # ═══ TAB 4 — HEALTH CHECKS ═════════════════════════════════════════════════════
 with T[3]:
@@ -465,11 +465,11 @@ with T[3]:
         fig_p.add_trace(go.Bar(name="P95",x=NAMES,y=p95s,marker_color=C["amber"],marker_line_width=0))
         fig_p.add_trace(go.Bar(name="P99",x=NAMES,y=p99s,marker_color=C["red"],marker_line_width=0))
         fig_p.update_layout(**{**PL,"barmode":"group","bargap":0.28,"bargroupgap":0.06,"height":230,"title":dict(text="Latency Percentiles",font=dict(size=13,color=C["text"]),x=0,xanchor="left"),"yaxis":dict(**PL["yaxis"],ticksuffix=" ms")})
-        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_p,use_container_width=True,config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_p,width="stretch",config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
         st.markdown('<div style="height:14px"></div><div class="sh">Latency Heatmap — last 60 ticks</div>',unsafe_allow_html=True)
         fig_hm=go.Figure(go.Heatmap(z=lat[:,-60:],x=np.arange(-59,1),y=[n[:10] for n in NAMES],colorscale=[[0,C["green_d"]],[0.25,C["green"]],[0.6,C["amber"]],[1,C["red"]]],colorbar=dict(title=dict(text="ms",side="right"),thickness=10,len=0.9,tickfont=dict(size=9,color=C["muted"]),outlinewidth=0),hovertemplate="<b>%{y}</b><br>t=%{x}s<br>%{z:.0f} ms<extra></extra>",zmin=0,zmax=500,xgap=1,ygap=2))
         fig_hm.update_layout(height=160,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",margin=dict(t=10,b=28,l=80,r=60),xaxis=dict(showgrid=False,zeroline=False,tickfont=dict(size=9,color=C["dim"])),yaxis=dict(showgrid=False,zeroline=False,tickfont=dict(size=10,color=C["muted"])))
-        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_hm,use_container_width=True,config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">',unsafe_allow_html=True); st.plotly_chart(fig_hm,width="stretch",config={"displayModeBar":False}); st.markdown('</div>',unsafe_allow_html=True)
 
     st.markdown('<div style="height:14px"></div><div class="sh">Health Check Probe Log</div>',unsafe_allow_html=True)
     probe_rows=""

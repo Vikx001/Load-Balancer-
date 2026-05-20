@@ -223,7 +223,7 @@ class HealthChecker:
                         if r.status == 200:
                             self._fails[i] = 0
                             if not self.metrics.health[i]:
-                                print(f"[health] Backend {i} recovered ✅")
+                                print(f"[health] Backend {i} recovered")
                                 self._ring.set_health(i, True)
                                 self.metrics.health[i] = True
                         else:
@@ -231,7 +231,7 @@ class HealthChecker:
                 except Exception as e:
                     self._fails[i] += 1
                     if self._fails[i] >= self.FAIL_THRESHOLD and self.metrics.health[i]:
-                        print(f"[health] Backend {i} FAILED ❌ ({e})")
+                        print(f"[health] Backend {i} FAILED ({e})")
                         self._ring.set_health(i, False)
                         self.metrics.health[i] = False
 

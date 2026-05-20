@@ -8,14 +8,39 @@ Omega-LB sits in front of your backends as a transparent reverse proxy. It route
 
 ---
 
-## Demo
+## Live Demo — Real Screenshots
 
-https://github.com/user-attachments/assets/6e48e65a-05a5-4f37-941e-33052a5f7276
+> All screenshots and diagrams captured live from a running Lima VM (Ubuntu 22.04, kernel 5.15, ARM64) with 363K+ requests processed.
+
+### How It Works — Full Infrastructure Flowchart
+![Architecture Flow](docs/screenshots/architecture-flow.png)
+
+Every arrow in the diagram above represents real network traffic or a real file write. The Lima VM runs the load generator, proxy, and all 4 backends. The host machine (macOS shown here, but Linux and Windows work identically) connects to port 8080 via Lima's port-forward and reads metrics through the virtiofs shared mount.
+
+### Infrastructure & Request Proof — Live Data
+![Request Proof](docs/screenshots/request-proof.png)
+
+Every HTTP response from the proxy includes three stamped headers that prove exactly which backend handled the request, how long it took, and which hash ring slot was selected. The backend response body includes a real `req_id` counter and the actual simulated latency applied — not mocked numbers.
+
+### Dashboard Overview — 207 RPS · 99.71% SLA · 4/4 Healthy
+![Dashboard Overview](docs/screenshots/dashboard-overview.png)
+
+### Routing Policy — KAN Weight Distribution + CBF Safety Equations + Hash Ring vNodes
+![Routing Policy](docs/screenshots/dashboard-routing.png)
+
+### Backend Utilisation Gauges
+![Backend Gauges](docs/screenshots/dashboard-backend-gauges.png)
+
+### Latency & RPS History Charts
+![Charts](docs/screenshots/dashboard-charts.png)
+
+### Health Checks — Backend-2 Flagged Degraded
+![Health Checks](docs/screenshots/dashboard-health.png)
 
 ---
 
 <details>
-<summary><strong>🟢 OMEGA-LB — LAYMAN'S DESCRIPTION</strong> (click to expand)</summary>
+<summary><strong>OMEGA-LB — LAYMAN'S DESCRIPTION</strong> (click to expand)</summary>
 
 <br>
 
@@ -177,7 +202,7 @@ The dashboard auto-detects the running proxy and switches to **LIVE** mode (gree
 
 ## Quick start (standalone, no Linux required)
 
-You only need **Python 3.11+** and your application running somewhere.
+You only need **Python 3.11+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
 
 ```bash
 # 1 — clone
@@ -186,11 +211,19 @@ cd omega-lb
 
 # 2 — edit omega-lb.yaml with your real backend addresses
 #     (defaults point to localhost:9000-9003)
+# macOS / Linux
 nano omega-lb.yaml
+# Windows
+notepad omega-lb.yaml
 
 # 3 — one command: creates venv, installs deps, starts proxy + dashboard
+# macOS / Linux
 ./start.sh
+# Windows (Git Bash or WSL)
+bash start.sh
 ```
+
+> **Windows without Git Bash / WSL?** Use the manual start steps below — they work natively in PowerShell or cmd.
 
 The proxy listens on **http://localhost:8080** — point your load generator or browser at that address.  
 The dashboard opens on **http://localhost:8501** — it flips to LIVE automatically once the proxy is up.
@@ -199,6 +232,7 @@ Press `Ctrl+C` to stop both processes cleanly.
 
 ### Manual start (two terminals)
 
+**macOS / Linux:**
 ```bash
 # Terminal 1 — install dependencies once, then start the proxy
 python3 -m venv .venv
@@ -207,6 +241,17 @@ python3 -m venv .venv
 
 # Terminal 2 — dashboard (reads demo/live_metrics.json written by the proxy)
 .venv/bin/streamlit run dashboard/app.py
+```
+
+**Windows (PowerShell):**
+```powershell
+# Terminal 1
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python demo\proxy.py
+
+# Terminal 2
+.venv\Scripts\streamlit run dashboard\app.py
 ```
 
 ---
@@ -366,8 +411,13 @@ No proxy, no backends needed.
 
 **Step 1 — create and activate a virtual environment:**
 ```bash
+# macOS / Linux
 python3 -m venv .venv
 source .venv/bin/activate
+
+# Windows (PowerShell)
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 ```
 
 **Step 2 — install dependencies:**
@@ -377,13 +427,21 @@ pip install streamlit plotly pandas numpy
 
 **Step 3 — create the metrics file (first time only):**
 ```bash
-mkdir -p demo
-echo '{}' > demo/live_metrics.json
+# macOS / Linux
+mkdir -p demo && echo '{}' > demo/live_metrics.json
+
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force demo | Out-Null
+'{}' | Set-Content demo\live_metrics.json
 ```
 
 **Step 4 — launch the dashboard:**
 ```bash
+# macOS / Linux
 .venv/bin/streamlit run dashboard/app.py
+
+# Windows (PowerShell)
+.venv\Scripts\streamlit run dashboard\app.py
 ```
 
 Open **http://localhost:8501** in your browser.  
@@ -391,7 +449,11 @@ If Streamlit prompts for an email, press Enter to skip.
 
 **To stop the dashboard:**
 ```bash
+# macOS / Linux
 pkill -f "streamlit run"
+
+# Windows
+taskkill /f /fi "WINDOWTITLE eq streamlit*" 2>nul || taskkill /f /im streamlit.exe 2>nul
 ```
 
 The dashboard runs a built-in M/M/1 queueing simulation with fault injection controls so you can explore all 5 layers and the UI without any infrastructure.
@@ -1239,7 +1301,7 @@ bpftool map dump name events_ringbuf | grep proto
 
 **Root cause:** eBPF programs run in the kernel — no stdout, stderr, or attach-able debugger. `bpf_trace_printk()` is rate-limited to 1 message/CPU/second, which at 50k RPS means you see **0.002%** of events. Decision context (why backend-3 was chosen, what the circuit state was, how many probes were skipped) is lost immediately.
 
-| ❌ Wrong approach | ✅ Implemented fix |
+| Wrong approach | Implemented fix |
 |---|---|
 | `bpf_trace_printk("selected backend %d\n", id)` — silently dropped under load | `events_ringbuf` with structured `event_sample` per routing decision |
 | Log at `zap.Debug` only in Go — not queryable at runtime | `FlightRecorder` ring buffer of last 10,000 decisions in memory |
@@ -1276,7 +1338,7 @@ journalctl -u omega-lb | grep '"msg":"routing_fallback"'
 
 **Root cause:** eBPF maps default to `FD_LIFETIME` — they live only as long as an open file descriptor holds them. When the Go daemon exits, all maps are destroyed. The data plane (kernel programs) continues routing but is now working with absent or zeroed maps. On restart, the ring is rebuilt from config defaults (equal weights) rather than from the learned distribution.
 
-| ❌ Wrong approach | ✅ Implemented fix |
+| Wrong approach | Implemented fix |
 |---|---|
 | Maps created fresh on every daemon start | `PinAllMaps()` — pins each map to `/sys/fs/bpf/omega/<name>` immediately after loading |
 | Daemon crash → cold ring → thundering herd | `PinOrReuse()` — on restart, opens existing pinned maps; zero data loss |
@@ -1318,7 +1380,7 @@ $$\text{series} = |\text{backends}| \times |\text{paths}| \times |\text{status c
 
 Prometheus stores all active series in RAM. At 15s scrape interval, 500k series = 2M samples/min = ~8GB RSS on a default Prometheus install.
 
-| ❌ Wrong approach | ✅ Implemented fix |
+| Wrong approach | Implemented fix |
 |---|---|
 | `{backend_ip, service, method, path, status}` labels | Only `{backend_id, service_id}` on per-request metrics |
 | Path label: `/api/v1/users/123456` per request | `AggregatePath()`: `/api/v1/users/{id}` (collapses per-user to per-route) |
@@ -1358,7 +1420,7 @@ curl -X DELETE 'http://localhost:9090/api/v1/series?match[]=omega_lb_backend_req
 
 **Root cause:** Models are deployed by overwriting a single ONNX file. No version history. No checksum. No staged promotion. Rollback requires retraining from a checkpoint (30 min minimum). Hot paths and session affinity are broken for the entire rollback window.
 
-| ❌ Wrong approach | ✅ Implemented fix |
+| Wrong approach | Implemented fix |
 |---|---|
 | Overwrite `model.onnx` in place | `ModelStore` — each version in its own directory; `registry.json` is the source of truth |
 | No checksum verification | SHA-256 validated on every `Pull()`; mismatch = refuse to load |
@@ -1399,7 +1461,7 @@ omegalb model promote --version=v1.5.0 --to=production
 
 **Root cause:** RL decision context (OOD score, CBF magnitude, weight vector, circuit state at decision time) is logged at `zap.Debug` level — not emitted at runtime without a log level change and daemon restart. There is no HTTP API to query decision history. The only way to change routing behaviour without a restart is to kill the process.
 
-| ❌ Wrong approach | ✅ Implemented fix |
+| Wrong approach | Implemented fix |
 |---|---|
 | `zap.Debug("RL step complete", ...)` — invisible at runtime | `FlightRecorder.Recent(n)` — last 10k decisions queryable via HTTP |
 | No mode switch → must kill process to stop RL | `POST /admin/mode {"mode":"ASSISTED"}` — bypass KAN in < 1 second |
