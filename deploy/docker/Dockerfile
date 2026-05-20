@@ -1,14 +1,24 @@
 FROM ubuntu:22.04 AS ebpf-builder
 
 RUN apt-get update && apt-get install -y \
-    clang-14 llvm-14 libbpf-dev linux-headers-generic \
+    clang-14 llvm-14 libbpf-dev linux-headers-generic bpftool \
     make pkg-config && \
     ln -s /usr/bin/clang-14 /usr/bin/clang
 
 WORKDIR /src/ebpf
 COPY ebpf/ .
 
-RUN make -C kern all
+# SKIP_EBPF=1 in CI where /sys/kernel/btf/vmlinux is unavailable inside the
+# Docker build context.  Stub objects are created so downstream COPY succeeds.
+# Production deployments must build with SKIP_EBPF=0 (the default).
+ARG SKIP_EBPF=0
+RUN if [ "$SKIP_EBPF" = "1" ]; then \
+      for f in filter_manager route_manager lb_policy connection_relay metrics_collector; do \
+        touch "kern/${f}.bpf.o"; \
+      done; \
+    else \
+      make -C kern all; \
+    fi
 
 # ─── Go builder ────────────────────────────────────────────────────────────
 FROM golang:1.22-bookworm AS go-builder

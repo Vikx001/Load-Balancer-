@@ -167,7 +167,12 @@ class A3CWorker(threading.Thread):
         super().__init__(daemon=True)
         self.worker_id = worker_id
         self.global_actor = global_actor
-        self.local_actor = copy.deepcopy(global_actor)
+        # deepcopy cannot pickle the threading.Lock inside A3CGlobalActor._lock;
+        # create a fresh local actor with the same architecture and copy weights.
+        obs_dim = global_actor.shared[0].in_features
+        act_dim = global_actor.policy_head.out_features
+        self.local_actor = A3CGlobalActor(obs_dim, act_dim)
+        self.local_actor.load_state_dict(global_actor.state_dict())
         self.cfg = cfg
         self.env = env
         self.opt = Adam(global_actor.parameters(), lr=cfg.lr)

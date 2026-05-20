@@ -203,7 +203,7 @@ jobs:
           cache: pip
 
       - name: Install ML dependencies
-        run: pip install numpy torch onnx onnxruntime
+        run: pip install numpy torch onnx onnxruntime onnxscript
 
       - name: Short PPO training run
         run: |
@@ -241,7 +241,7 @@ jobs:
           cache: pip
 
       - name: Install ML dependencies
-        run: pip install numpy torch onnx onnxruntime
+        run: pip install numpy torch onnx onnxruntime onnxscript
 
       - name: Short DQN training run
         run: |
@@ -281,6 +281,7 @@ jobs:
           file: deploy/docker/Dockerfile
           push: false
           tags: omega-lb:ci-${{ github.sha }}
+          build-args: SKIP_EBPF=1
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

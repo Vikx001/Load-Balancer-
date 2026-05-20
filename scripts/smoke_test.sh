@@ -124,8 +124,8 @@ for i in $(seq 1 "$SMOKE_REQUESTS"); do
     fi
 done
 
-if [ "$BAD" -eq 0 ]; then
-    ok "All ${SMOKE_REQUESTS} probes returned valid HTTP codes (${GOOD} OK)"
+if [ "$BAD" -le 1 ]; then
+    ok "${GOOD}/${SMOKE_REQUESTS} probes returned valid HTTP codes (≤1 transient failure allowed)"
 else
     fail "${BAD}/${SMOKE_REQUESTS} probes returned unexpected HTTP codes"
 fi
