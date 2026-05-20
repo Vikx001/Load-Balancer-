@@ -1,0 +1,54 @@
+# Lima VM for Omega-LB eBPF development
+# Start with: limactl start deploy/lima/omega.yaml
+# Shell into it: limactl shell omega
+# Stop: limactl stop omega
+
+images:
+  # Apple Silicon (M1/M2/M3/M4)
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+  # Intel Mac
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+
+cpus: 2
+memory: "4GiB"
+disk: "20GiB"
+
+mounts:
+  - location: "/Volumes/work/Load balancer"
+    mountPoint: "/workspace"
+    writable: true
+
+portForwards:
+  - guestPort: 8080
+    hostPort: 8080
+  - guestPort: 9090
+    hostPort: 9090
+
+# Bootstrap the VM with all build dependencies on first start
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -e
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get install -y -qq \
+        clang-14 llvm-14 libbpf-dev libbpf1 \
+        linux-tools-$(uname -r) linux-tools-generic \
+        make pkg-config \
+        golang-1.22 \
+        curl git iproute2 wrk || \
+      apt-get install -y -qq \
+        clang-14 llvm-14 libbpf-dev libbpf1 \
+        linux-tools-generic \
+        make pkg-config \
+        golang-1.22 \
+        curl git iproute2
+      ln -sf /usr/bin/clang-14 /usr/bin/clang
+      ln -sf /usr/lib/go-1.22/bin/go /usr/local/bin/go
+      echo "=== Build deps installed ==="
+      go version
+      uname -r
+      ls /sys/kernel/btf/vmlinux && echo "BTF available ✓" || echo "BTF NOT available ✗"
