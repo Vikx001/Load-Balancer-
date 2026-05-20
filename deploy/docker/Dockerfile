@@ -28,7 +28,7 @@ COPY controlplane/ ./controlplane/
 COPY --from=ebpf-builder /src/ebpf/kern/*.bpf.o /usr/lib/omega-lb/bpf/
 
 WORKDIR /src/controlplane
-RUN go mod download
+RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -o /usr/bin/omegalb ./cmd/omegalb
 
