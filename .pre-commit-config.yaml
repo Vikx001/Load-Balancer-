@@ -1,0 +1,89 @@
+# ────────────────────────────────────────────────────────────────────────────
+# Omega-LB — pre-commit hooks
+#
+# Install:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run manually (all files):
+#   pre-commit run --all-files
+#
+# Reference: GitHub Engineering Best Practices (2024) — linting at commit time
+#   prevents entire classes of CI failures before code ever reaches the remote.
+# ────────────────────────────────────────────────────────────────────────────
+
+# Minimum pre-commit version required
+minimum_pre_commit_version: "3.5.0"
+
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+
+  # ── General file hygiene ────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2048]    # block files > 2 MB
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: no-commit-to-branch
+        args: [--branch=main]   # force PRs — never commit directly to main
+      - id: detect-private-key  # catch accidentally committed secrets
+
+  # ── Python: Ruff (linter + formatter) ──────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.10
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args:
+          - --fix
+          - --exit-non-zero-on-fix
+          - --target-version=py311
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff (format)
+        types_or: [python, pyi]
+
+  # ── Go: vet + format ─────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: go-vet
+        name: go vet
+        language: system
+        entry: bash -c 'cd controlplane && go vet ./...'
+        types: [go]
+        pass_filenames: false
+
+      - id: gofmt
+        name: gofmt
+        language: system
+        entry: gofmt -l -w
+        types: [go]
+
+  # ── Shell scripts: shellcheck ────────────────────────────────────────────────
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning, --shell=bash]
+        files: \.(sh)$
+
+  # ── Secrets scanning ─────────────────────────────────────────────────────────
+  # Catches API keys, tokens, passwords before they reach the repo.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secrets scan)

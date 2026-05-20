@@ -14,7 +14,8 @@ DEPLOY_DIR  := deploy
 
 .PHONY: help build build-ebpf build-go docker-build docker-run \
         train-ppo train-dqn bench bench-http \
-        k8s-deploy k8s-teardown lint test clean
+        k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
+        smoke reset dev health check clean
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -119,18 +120,44 @@ stage-check: ## Print which stage is configured in the running daemon
 
 # ─── Quality ──────────────────────────────────────────────────────────────────
 
-lint: ## Run linters
+lint: ## Run Go + Python linters
 	cd $(GO_DIR) && go vet ./... && \
 		(command -v staticcheck && staticcheck ./...) || true
-	cd $(ML_DIR) && (command -v ruff && ruff check .) || true
+	$(MAKE) lint-py
 
-test: ## Run Go unit tests
+lint-py: ## Lint + format-check Python with ruff
+	@command -v ruff >/dev/null 2>&1 || pip install ruff -q
+	ruff check --output-format=concise demo/ ml/ tests/ dashboard/
+	ruff format --check demo/ ml/ tests/ dashboard/
+
+test: ## Run Go unit tests (with race detector)
 	cd $(GO_DIR) && go test ./... -race -timeout 60s
 
-test-ml: ## Run Python ML module unit tests
-	python -m pytest tests/ -v --tb=short
+test-ml: ## Run Python unit tests (unit + proxy, no integration)
+	python -m pytest tests/test_all_layers.py tests/test_ml_modules.py \
+		tests/test_proxy_unit.py -v --tb=short
 
 test-all: test test-ml ## Run all tests (Go + Python)
+
+integration: ## Run integration tests (requires .venv, starts demo stack)
+	python -m pytest tests/test_integration.py -v --tb=short --timeout=60
+
+smoke: ## 30-second end-to-end smoke test (starts + probes full demo stack)
+	bash scripts/smoke_test.sh
+
+health: ## Print live health status of all demo stack components
+	bash scripts/health_check.sh
+
+reset: ## Kill all local demo processes and reset metrics state
+	bash scripts/reset.sh
+
+dev: ## Start full demo stack (4 backends + proxy + dashboard)
+	@mkdir -p demo
+	@[ -f demo/live_metrics.json ] || echo '{}' > demo/live_metrics.json
+	@echo "  Starting demo stack — Ctrl-C to stop"
+	python demo/run.py
+
+check: lint-py test-ml smoke ## Full local quality gate (lint + unit + smoke)
 
 smoke-train: ## Smoke-test training pipelines (1 000 steps each, no GPU needed)
 	python -c "\

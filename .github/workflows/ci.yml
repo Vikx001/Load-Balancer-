@@ -284,7 +284,72 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── 9. Integration gate (required for merging) ─────────────────────────
+  # ── 9. Integration tests — real demo stack in CI ───────────────────────
+  integration:
+    name: Integration · demo stack + HTTP probes
+    runs-on: ubuntu-latest
+    needs: [test-python]   # only run after unit tests pass
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install aiohttp numpy onnxruntime PyYAML requests pytest pytest-timeout
+
+      - name: Create demo fixture
+        run: |
+          mkdir -p demo
+          echo '{}' > demo/live_metrics.json
+
+      - name: Run integration tests
+        run: |
+          python -m pytest tests/test_integration.py \
+            --junitxml=junit/integration.xml \
+            --timeout=60 \
+            -v
+        env:
+          OMEGA_LB_PORT: "18080"
+          OMEGA_LB_LOG_LEVEL: WARNING
+
+      - name: Upload integration results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results
+          path: junit/integration.xml
+
+  # ── 10. Smoke — scripts/smoke_test.sh full stack probe ─────────────────
+  smoke:
+    name: Smoke · full demo stack HTTP probe
+    runs-on: ubuntu-latest
+    needs: [integration]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install aiohttp numpy onnxruntime PyYAML
+
+      - name: Create demo fixture
+        run: |
+          mkdir -p demo
+          echo '{}' > demo/live_metrics.json
+
+      - name: Run smoke test
+        run: bash scripts/smoke_test.sh
+        timeout-minutes: 3
+
+  # ── 11. Integration gate (required for merging) ─────────────────────────
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -292,6 +357,7 @@ jobs:
       - test-python
       - test-go
       - smoke-ml-import
+      - integration
     if: always()
     steps:
       - name: Check required jobs
@@ -304,5 +370,9 @@ jobs:
           fi
           if [[ "${{ needs.smoke-ml-import.result }}" != "success" ]]; then
             echo "smoke-ml-import failed" && exit 1
+          fi
+          if [[ "${{ needs.integration.result }}" != "success" && \
+                "${{ needs.integration.result }}" != "skipped" ]]; then
+            echo "integration tests failed" && exit 1
           fi
           echo "All required checks passed."

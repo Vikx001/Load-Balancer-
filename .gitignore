@@ -51,4 +51,5 @@ controlplane/vendor/
 # Secrets
 .env
 .env.*
+!.env.example
 secrets.yaml

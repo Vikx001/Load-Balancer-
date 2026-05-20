@@ -1,0 +1,9 @@
+# Omega-LB Dashboard dependencies
+# Install with: pip install -r dashboard/requirements.txt
+# (or use the top-level requirements.txt which is a superset)
+
+streamlit>=1.35.0
+plotly>=5.20.0
+pandas>=2.0.0
+numpy>=1.26.0
+PyYAML>=6.0

@@ -8,3 +8,27 @@ ignore = ["E501"]  # long lines are fine in a dashboard
 [tool.ruff.lint.per-file-ignores]
 # dashboard uses intentionally compact semicolon style for simulation code
 "dashboard/app.py" = ["E701", "E702"]
+
+[tool.pytest.ini_options]
+# Discover all test_*.py files under tests/
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+markers = [
+    "integration: marks tests that start real subprocesses (deselect with -m 'not integration')",
+    "slow: marks tests that take >10s to run",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["demo", "ml"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/.*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 60   # raise this as coverage grows
