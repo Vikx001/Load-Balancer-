@@ -1,6 +1,35 @@
 #pragma once
 // omega_maps.h — shared map constants, verifier-safety guards, and operational
 // constraints.  Every eBPF source file in this project includes this header.
+
+// ─── Kernel version compat ────────────────────────────────────────────────────
+// BPF_SOCK_OPS_TX_SENDMSG_CB was introduced in Linux 6.x (value 17).
+// On kernels < 6.x the op value 255 never matches, so filter_manager is a
+// transparent pass-through.  The hook activates automatically on 6.x+.
+#ifndef BPF_SOCK_OPS_TX_SENDMSG_CB
+#define BPF_SOCK_OPS_TX_SENDMSG_CB 255
+#endif
+
+// Socket/TCP constants not emitted by bpftool-generated vmlinux.h (they are
+// UAPI values, not kernel-internal types).  Values are stable Linux ABI.
+#ifndef SOL_SOCKET
+#define SOL_SOCKET      1
+#endif
+#ifndef SO_KEEPALIVE
+#define SO_KEEPALIVE    9
+#endif
+#ifndef IPPROTO_TCP
+#define IPPROTO_TCP     6
+#endif
+#ifndef TCP_KEEPIDLE
+#define TCP_KEEPIDLE    4
+#endif
+#ifndef TCP_KEEPINTVL
+#define TCP_KEEPINTVL   5
+#endif
+#ifndef TCP_KEEPCNT
+#define TCP_KEEPCNT     6
+#endif
 //
 // ─── VERIFIER SAFETY NOTES ───────────────────────────────────────────────────
 // 1. UNBOUNDED LOOPS → verifier rejects with "back-edge from insn N to M".
