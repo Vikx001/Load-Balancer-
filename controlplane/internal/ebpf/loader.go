@@ -7,7 +7,6 @@
 package ebpf
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"runtime"

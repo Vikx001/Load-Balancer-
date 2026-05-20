@@ -77,7 +77,7 @@ jobs:
           cache: pip
 
       - name: Install Python dependencies
-        run: pip install numpy torch onnxruntime pytest pytest-timeout
+        run: pip install numpy torch onnxruntime pytest pytest-timeout requests
 
       - name: Run all Python tests
         run: python -m pytest tests/ -v --tb=short --timeout=120
