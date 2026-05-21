@@ -11,6 +11,7 @@ python3 -m venv .venv-desktop
   --clean \
   --windowed \
   --name OmegaLBDesktop \
+  --paths "." \
   --hidden-import demo.backends \
   --hidden-import demo.proxy \
   --hidden-import demo.loadgen \
