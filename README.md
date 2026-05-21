@@ -204,6 +204,33 @@ The dashboard auto-detects the running proxy and switches to **LIVE** mode (gree
 
 You only need **Python 3.11+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
 
+### Desktop app (no terminal workflow)
+
+If you want a Postman-like desktop experience, use the native launcher in `desktop/`.
+It provides:
+- One-click stack start/stop (backends + proxy + loadgen)
+- Live KPIs (RPS, requests, health, error rate)
+- Backend table (latency/load/errors/vnodes/rate/KAN weight)
+- Built-in runtime activity pane
+
+Run from source:
+
+```bash
+make desktop-run
+```
+
+Build installables:
+
+```bash
+# macOS
+make desktop-build-macos
+# output: dist/OmegaLBDesktop.app
+
+# Windows (run from PowerShell)
+powershell -ExecutionPolicy Bypass -File desktop/build_windows.ps1
+# output: dist/OmegaLBDesktop/OmegaLBDesktop.exe
+```
+
 ```bash
 # 1 — clone
 git clone https://github.com/your-org/omega-lb
@@ -281,6 +308,7 @@ All user-facing settings live in `omega-lb.yaml` at the repo root. Edit it and r
 proxy:
   host: "127.0.0.1"     # 0.0.0.0 to accept external traffic
   port: 8080
+  retry_idempotent_only: true   # retries only GET/HEAD/OPTIONS/PUT/DELETE
 
 backends:
   - host: "192.168.1.10"
@@ -310,9 +338,6 @@ admin:
     - "127.0.0.1/32"
     - "::1/128"
   rate_limit_per_min: 60
-
-proxy:
-  retry_idempotent_only: true   # retries only GET/HEAD/OPTIONS/PUT/DELETE
 ```
 
 Supports **2–8 backends**. Names and zones are displayed verbatim in the dashboard.

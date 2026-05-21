@@ -13,6 +13,7 @@ EBPF_DIR    := ebpf/kern
 DEPLOY_DIR  := deploy
 
 .PHONY: help build build-ebpf build-go docker-build docker-run docker-demo \
+	desktop-run desktop-build-macos desktop-build-windows \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
         smoke reset dev health check clean download-model
@@ -46,6 +47,19 @@ docker-demo: ## Run Python demo stack in Docker (no eBPF, works on macOS/Windows
 
 docker-push: docker-build ## Push image to registry
 	docker push $(IMAGE)
+
+# ─── Desktop App ─────────────────────────────────────────────────────────────
+
+desktop-run: ## Run native desktop launcher from source
+	python3 -m venv .venv-desktop
+	.venv-desktop/bin/pip install -q -r requirements.txt -r desktop/requirements.txt
+	.venv-desktop/bin/python desktop/omegalb_desktop.py
+
+desktop-build-macos: ## Build macOS app bundle (.app)
+	bash desktop/build_macos.sh
+
+desktop-build-windows: ## Build Windows executable (.exe) from PowerShell
+	@echo "Run in PowerShell: powershell -ExecutionPolicy Bypass -File desktop/build_windows.ps1"
 
 # ─── ML Training ──────────────────────────────────────────────────────────────
 
