@@ -133,6 +133,11 @@ def _is_ip_allowed(ip_txt: str | None) -> bool:
     return any(ip_obj in net for net in _ADMIN_ALLOWLIST_NETS)
 
 
+def _audit_admin_block(status: int, reason: str, ip_txt: str | None):
+    ip_show = ip_txt or "unknown"
+    print(f"[admin] BLOCKED status={status} reason={reason} ip={ip_show}")
+
+
 class _AdminRateLimiter:
     """Simple fixed-window per-IP limiter for /_omega/admin."""
 
@@ -588,10 +593,12 @@ class OmegaLBProxy:
         try:
             client_ip = _client_ip_from_request(request)
             if not _is_ip_allowed(client_ip):
+                _audit_admin_block(403, "ip_not_allowlisted", client_ip)
                 return aiohttp.web.Response(status=403, text="forbidden")
 
             ok, remaining = _ADMIN_RATE_LIMITER.allow(client_ip or "unknown")
             if not ok:
+                _audit_admin_block(429, "rate_limited", client_ip)
                 return aiohttp.web.Response(status=429, text="admin_rate_limited")
 
             if _ADMIN_TOKEN:
@@ -600,6 +607,7 @@ class OmegaLBProxy:
                 if auth.lower().startswith("bearer "):
                     token = auth[7:].strip()
                 if token != _ADMIN_TOKEN:
+                    _audit_admin_block(401, "invalid_token", client_ip)
                     return aiohttp.web.Response(status=401, text="unauthorized")
 
             data = await request.json()
@@ -637,6 +645,8 @@ class OmegaLBProxy:
                 headers={"X-Omega-Admin-RateLimit-Remaining": str(remaining)}
             )
         except Exception as e:
+            client_ip = _client_ip_from_request(request)
+            _audit_admin_block(400, f"bad_request:{type(e).__name__}", client_ip)
             return aiohttp.web.Response(status=400, text=str(e))
 
 

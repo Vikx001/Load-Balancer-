@@ -230,6 +230,23 @@ The dashboard opens on **http://localhost:8501** — it flips to LIVE automatica
 
 Press `Ctrl+C` to stop both processes cleanly.
 
+### Local Docker runtime (real LB behavior, no Linux kernel features required)
+
+This path runs the real Python proxy, real aiohttp backends, load generator, and dashboard with health-gated startup ordering.
+
+```bash
+# macOS / Linux (Docker Desktop)
+docker-compose -f deploy/docker/docker-compose-demo.yml up --build
+
+# Windows (PowerShell)
+docker-compose -f deploy/docker/docker-compose-demo.yml up --build
+```
+
+Endpoints:
+- Proxy: `http://localhost:8080`
+- Status: `http://localhost:8080/_omega/status`
+- Dashboard: `http://localhost:8501`
+
 ### Manual start (two terminals)
 
 **macOS / Linux:**
@@ -286,9 +303,27 @@ rate_limiting:
   initial_rps: 1000
   min_rps: 100
   max_rps: 5000
+
+admin:
+  token: "change-me"           # or env: OMEGA_ADMIN_TOKEN
+  allowlist:
+    - "127.0.0.1/32"
+    - "::1/128"
+  rate_limit_per_min: 60
+
+proxy:
+  retry_idempotent_only: true   # retries only GET/HEAD/OPTIONS/PUT/DELETE
 ```
 
 Supports **2–8 backends**. Names and zones are displayed verbatim in the dashboard.
+
+For admin operations (`POST /_omega/admin`), requests are validated in this order:
+1. Source IP must be in `admin.allowlist`
+2. Per-IP budget must be below `admin.rate_limit_per_min`
+3. Token must match `admin.token` (or `OMEGA_ADMIN_TOKEN`)
+
+Blocked admin attempts are logged by the proxy as audit lines:
+`[admin] BLOCKED status=<code> reason=<reason> ip=<source>`
 
 ---
 
@@ -339,6 +374,23 @@ Incoming request
                         │
                         ▼
                    Backend pool
+```
+
+### Control-path security flow (admin actions)
+
+The request data-path above is separate from the admin control path used by the dashboard fault controls:
+
+```text
+Dashboard / operator
+  │  POST /_omega/admin
+  ▼
+IP allowlist check
+  ▼
+Per-IP rate limiter
+  ▼
+Token auth (Bearer or X-Omega-Admin-Token)
+  ▼
+Backend control action (kill/revive/spike)
 ```
 
 ### Metrics bus
