@@ -52,3 +52,11 @@ rate_limiting:
 #   cert_file: "cert.pem"
 #   key_file:  "key.pem"
 #   upstream_tls: false   # set true if backends also use HTTPS
+
+# Admin API hardening (POST /_omega/admin)
+# admin:
+#   token: "change-me"  # or use env OMEGA_ADMIN_TOKEN
+#   allowlist:
+#     - "127.0.0.1/32"
+#     - "::1/128"
+#   rate_limit_per_min: 60

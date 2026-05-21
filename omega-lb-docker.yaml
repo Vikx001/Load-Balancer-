@@ -41,3 +41,10 @@ rate_limiting:
 admin:
   # Required for POST /_omega/admin (can also come from OMEGA_ADMIN_TOKEN env var)
   token: "local-dev-token"
+  # Allow localhost plus common Docker bridge CIDR ranges for local testing
+  allowlist:
+    - "127.0.0.1/32"
+    - "::1/128"
+    - "172.16.0.0/12"
+  # Per-client-IP request budget for /_omega/admin
+  rate_limit_per_min: 120

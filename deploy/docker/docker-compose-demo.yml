@@ -39,6 +39,8 @@ services:
     environment:
       - OMEGA_CONFIG=/app/omega-lb-docker.yaml
       - OMEGA_ADMIN_TOKEN=local-dev-token
+      - OMEGA_ADMIN_ALLOWLIST=127.0.0.1/32,::1/128,172.16.0.0/12
+      - OMEGA_ADMIN_RATE_LIMIT_PER_MIN=120
     volumes:
       - metrics:/app/demo
     depends_on:

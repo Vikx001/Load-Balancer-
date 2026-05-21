@@ -10,6 +10,7 @@ Uses the ACTUAL system components:
 """
 import asyncio, aiohttp, aiohttp.web
 import sys, os, ssl, signal, time, math, struct, json, threading
+import ipaddress
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -85,9 +86,80 @@ _TLS_CERT  = _CFG.get("tls", {}).get("cert_file")
 _TLS_KEY   = _CFG.get("tls", {}).get("key_file")
 _TLS_UPSTREAM = _CFG.get("tls", {}).get("upstream_tls", False)  # verify upstream TLS?
 _ADMIN_TOKEN = os.environ.get("OMEGA_ADMIN_TOKEN", _CFG.get("admin", {}).get("token"))
+_ADMIN_ALLOWLIST_RAW = os.environ.get("OMEGA_ADMIN_ALLOWLIST")
+if _ADMIN_ALLOWLIST_RAW:
+    _ADMIN_ALLOWLIST = [p.strip() for p in _ADMIN_ALLOWLIST_RAW.split(",") if p.strip()]
+else:
+    _ADMIN_ALLOWLIST = _CFG.get("admin", {}).get("allowlist", ["127.0.0.1/32", "::1/128"])
+_ADMIN_RATE_LIMIT_PER_MIN = int(
+    os.environ.get("OMEGA_ADMIN_RATE_LIMIT_PER_MIN", _CFG.get("admin", {}).get("rate_limit_per_min", 60))
+)
 _RETRY_IDEMPOTENT_ONLY = _CFG.get("proxy", {}).get("retry_idempotent_only", True)
 
 _IDEMPOTENT_METHODS = {"GET", "HEAD", "OPTIONS", "PUT", "DELETE"}
+
+
+def _parse_admin_networks(raw_list: list[str]) -> list[ipaddress._BaseNetwork]:
+    nets = []
+    for item in raw_list:
+        try:
+            nets.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            print(f"[proxy] WARNING: invalid admin allowlist entry ignored: {item}")
+    return nets
+
+
+_ADMIN_ALLOWLIST_NETS = _parse_admin_networks(_ADMIN_ALLOWLIST)
+
+
+def _client_ip_from_request(request: aiohttp.web.Request) -> str | None:
+    ip_txt = request.remote
+    if not ip_txt:
+        peer = request.transport.get_extra_info("peername") if request.transport else None
+        if isinstance(peer, tuple) and peer:
+            ip_txt = str(peer[0])
+    return ip_txt
+
+
+def _is_ip_allowed(ip_txt: str | None) -> bool:
+    if not _ADMIN_ALLOWLIST_NETS:
+        return True
+    if not ip_txt:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip_txt)
+    except ValueError:
+        return False
+    return any(ip_obj in net for net in _ADMIN_ALLOWLIST_NETS)
+
+
+class _AdminRateLimiter:
+    """Simple fixed-window per-IP limiter for /_omega/admin."""
+
+    def __init__(self, limit_per_min: int):
+        self.limit = max(1, int(limit_per_min))
+        self._state = {}  # ip -> (window_start_sec, count)
+        self._lock = threading.Lock()
+
+    def allow(self, ip_txt: str) -> tuple[bool, int]:
+        now = int(time.time())
+        window_start = now - (now % 60)
+        with self._lock:
+            prev = self._state.get(ip_txt)
+            if prev is None or prev[0] != window_start:
+                self._state[ip_txt] = (window_start, 1)
+                return True, self.limit - 1
+
+            count = prev[1]
+            if count >= self.limit:
+                return False, 0
+
+            count += 1
+            self._state[ip_txt] = (window_start, count)
+            return True, self.limit - count
+
+
+_ADMIN_RATE_LIMITER = _AdminRateLimiter(_ADMIN_RATE_LIMIT_PER_MIN)
 
 print(f"[proxy] Loaded {N} backend(s) from config:")
 for i, (host, port) in enumerate(BACKENDS):
@@ -96,6 +168,11 @@ if _ADMIN_TOKEN:
     print("[proxy] Admin endpoint auth: enabled")
 else:
     print("[proxy] WARNING: admin endpoint auth is disabled")
+if _ADMIN_ALLOWLIST_NETS:
+    print(f"[proxy] Admin IP allowlist: {', '.join(str(n) for n in _ADMIN_ALLOWLIST_NETS)}")
+else:
+    print("[proxy] WARNING: admin IP allowlist is disabled")
+print(f"[proxy] Admin rate limit: {_ADMIN_RATE_LIMIT_PER_MIN}/min per IP")
 
 # ─── MurmurHash3 (matches ring.go) ────────────────────────────────────────────
 
@@ -509,6 +586,14 @@ class OmegaLBProxy:
     async def handle_admin(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
         """Control endpoint for the dashboard fault-injection controls."""
         try:
+            client_ip = _client_ip_from_request(request)
+            if not _is_ip_allowed(client_ip):
+                return aiohttp.web.Response(status=403, text="forbidden")
+
+            ok, remaining = _ADMIN_RATE_LIMITER.allow(client_ip or "unknown")
+            if not ok:
+                return aiohttp.web.Response(status=429, text="admin_rate_limited")
+
             if _ADMIN_TOKEN:
                 token = request.headers.get("X-Omega-Admin-Token", "")
                 auth = request.headers.get("Authorization", "")
@@ -547,7 +632,10 @@ class OmegaLBProxy:
                 with open(os.path.join(os.path.dirname(__file__), "spike.flag"), "w") as f:
                     f.write("1" if data["spike"] else "0")
 
-            return aiohttp.web.Response(text="ok")
+            return aiohttp.web.Response(
+                text="ok",
+                headers={"X-Omega-Admin-RateLimit-Remaining": str(remaining)}
+            )
         except Exception as e:
             return aiohttp.web.Response(status=400, text=str(e))
 
