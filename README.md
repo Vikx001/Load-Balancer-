@@ -213,6 +213,8 @@ It provides:
 - Backend table (latency/load/errors/vnodes/rate/KAN weight)
 - Built-in runtime activity pane
 - Secure local admin control path by default (token + allowlist + rate limit)
+- Backend Wiring panel: add/remove real upstream targets and save directly from UI
+- Runtime mode switch: local managed backends or external real backends
 
 Run from source:
 
@@ -231,6 +233,13 @@ make desktop-build-macos
 powershell -ExecutionPolicy Bypass -File desktop/build_windows.ps1
 # output: dist/OmegaLBDesktop/OmegaLBDesktop.exe
 ```
+
+To use your own real services from the desktop app:
+1. Open the `Backend Wiring` panel in the app
+2. Add your backend host/port entries
+3. Click `Save Wiring`
+4. Disable `Start local managed backends`
+5. Click `Start Stack`
 
 ### Production-grade desktop distribution checklist
 
