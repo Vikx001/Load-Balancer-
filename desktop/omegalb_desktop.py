@@ -15,6 +15,9 @@ import urllib.error
 import webbrowser
 from pathlib import Path
 
+__VERSION__ = "1.0.0-alpha.1"
+__RELEASE_DATE__ = "May 21, 2026"
+
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
@@ -71,7 +74,7 @@ def _run_module_main(module_name: str, env_overrides: dict[str, str] | None = No
 class OmegaDesktop(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Omega-LB Desktop")
+        self.setWindowTitle(f"Omega-LB Desktop v{__VERSION__}")
         self.resize(1280, 800)
 
         self.processes: dict[str, mp.Process] = {}

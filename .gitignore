@@ -57,3 +57,5 @@ controlplane/vendor/
 .env.*
 !.env.example
 secrets.yaml
+releases/*.zip
+releases/**/*.app/
