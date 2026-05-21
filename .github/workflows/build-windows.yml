@@ -1,0 +1,70 @@
+name: Build Windows Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag (e.g. v1.0.0-alpha.1)"
+        required: true
+        default: "v1.0.0-alpha.1"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv-desktop
+          .\.venv-desktop\Scripts\pip install -q -r requirements.txt -r desktop/requirements.txt
+
+      - name: Build Windows executable
+        shell: pwsh
+        run: |
+          .\.venv-desktop\Scripts\pyinstaller `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --name OmegaLBDesktop `
+            --paths "." `
+            --hidden-import demo.backends `
+            --hidden-import demo.proxy `
+            --hidden-import demo.loadgen `
+            --hidden-import ml.kan `
+            --hidden-import ml.cbf `
+            --add-data "demo;demo" `
+            --add-data "ml;ml" `
+            --add-data "omega-lb.yaml;." `
+            desktop/omegalb_desktop.py
+
+      - name: Create ZIP archive
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          Compress-Archive -Path "dist\OmegaLBDesktop\*" -DestinationPath "OmegaLBDesktop-$version-win-x64.zip"
+
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          $hash = (Get-FileHash "OmegaLBDesktop-$version-win-x64.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  OmegaLBDesktop-$version-win-x64.zip" | Out-File -Encoding ascii "OmegaLBDesktop-$version-win-x64.zip.sha256"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          files: |
+            OmegaLBDesktop-${{ github.event.inputs.version }}-win-x64.zip
+            OmegaLBDesktop-${{ github.event.inputs.version }}-win-x64.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
