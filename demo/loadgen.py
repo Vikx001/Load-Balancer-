@@ -9,7 +9,7 @@ Traffic pattern:
 """
 import asyncio, aiohttp, time, math, os, random, sys
 
-PROXY_URL   = "http://127.0.0.1:8080"
+PROXY_URL   = os.environ.get("OMEGA_PROXY_URL", "http://127.0.0.1:8080")
 SPIKE_FLAG  = os.path.join(os.path.dirname(__file__), "spike.flag")
 
 PATHS = [
@@ -100,7 +100,7 @@ async def main():
         slot_start = time.monotonic()
         slot_count = 0
 
-        print("[loadgen] Starting load generator → http://127.0.0.1:8080")
+        print(f"[loadgen] Starting load generator -> {PROXY_URL}")
         print("[loadgen] Ctrl-C to stop.\n")
 
         try:

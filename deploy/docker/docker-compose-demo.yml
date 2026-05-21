@@ -1,4 +1,3 @@
-version: "3.9"
 # ─────────────────────────────────────────────────────────────────────────────
 # Omega-LB demo stack — Python proxy + 4 backends + Streamlit dashboard
 # No Linux kernel, no eBPF, no privileges required.
@@ -13,25 +12,20 @@ version: "3.9"
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
-  # Four aiohttp backends
-  backend-0:
-    image: hashicorp/http-echo:latest
-    command: ["-text=backend-0", "-listen=:9000"]
-    networks: [demo]
-
-  backend-1:
-    image: hashicorp/http-echo:latest
-    command: ["-text=backend-1", "-listen=:9001"]
-    networks: [demo]
-
-  backend-2:
-    image: hashicorp/http-echo:latest
-    command: ["-text=backend-2", "-listen=:9002"]
-    networks: [demo]
-
-  backend-3:
-    image: hashicorp/http-echo:latest
-    command: ["-text=backend-3", "-listen=:9003"]
+  # Real aiohttp backends (all 4 personalities in one service)
+  backends:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["python", "-m", "demo.backends"]
+    environment:
+      - OMEGA_BACKEND_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; [u.urlopen(f'http://127.0.0.1:{p}/_health', timeout=2).read() for p in (9000,9001,9002,9003)]"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
     networks: [demo]
 
   # Omega-LB Python proxy
@@ -44,13 +38,18 @@ services:
       - "8080:8080"
     environment:
       - OMEGA_CONFIG=/app/omega-lb-docker.yaml
+      - OMEGA_ADMIN_TOKEN=local-dev-token
     volumes:
       - metrics:/app/demo
     depends_on:
-      - backend-0
-      - backend-1
-      - backend-2
-      - backend-3
+      backends:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/_omega/status', timeout=3).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
     networks: [demo]
     restart: unless-stopped
 
@@ -63,7 +62,8 @@ services:
     environment:
       - OMEGA_PROXY_URL=http://proxy:8080
     depends_on:
-      - proxy
+      proxy:
+        condition: service_healthy
     networks: [demo]
     restart: unless-stopped
 
@@ -72,13 +72,20 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.demo
-    command: ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    command: ["python", "-m", "streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
     ports:
       - "8501:8501"
     volumes:
       - metrics:/app/demo
     depends_on:
-      - proxy
+      proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8501', timeout=3).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 8s
     networks: [demo]
     restart: unless-stopped
 

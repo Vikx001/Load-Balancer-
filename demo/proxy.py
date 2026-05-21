@@ -84,10 +84,18 @@ _MAX_RPS   = float(_CFG["rate_limiting"].get("max_rps", 5000))
 _TLS_CERT  = _CFG.get("tls", {}).get("cert_file")
 _TLS_KEY   = _CFG.get("tls", {}).get("key_file")
 _TLS_UPSTREAM = _CFG.get("tls", {}).get("upstream_tls", False)  # verify upstream TLS?
+_ADMIN_TOKEN = os.environ.get("OMEGA_ADMIN_TOKEN", _CFG.get("admin", {}).get("token"))
+_RETRY_IDEMPOTENT_ONLY = _CFG.get("proxy", {}).get("retry_idempotent_only", True)
+
+_IDEMPOTENT_METHODS = {"GET", "HEAD", "OPTIONS", "PUT", "DELETE"}
 
 print(f"[proxy] Loaded {N} backend(s) from config:")
 for i, (host, port) in enumerate(BACKENDS):
     print(f"  [{i}] {_BACKEND_NAMES[i]}  {host}:{port}  ({_BACKEND_ZONES[i]})")
+if _ADMIN_TOKEN:
+    print("[proxy] Admin endpoint auth: enabled")
+else:
+    print("[proxy] WARNING: admin endpoint auth is disabled")
 
 # ─── MurmurHash3 (matches ring.go) ────────────────────────────────────────────
 
@@ -405,9 +413,12 @@ class OmegaLBProxy:
                    if k.lower() not in ("host", "content-length")}
         body = await request.read()
 
+        allow_retry = (not _RETRY_IDEMPOTENT_ONLY) or (request.method.upper() in _IDEMPOTENT_METHODS)
+
         # Retry once on 5xx or network error — pick next healthy backend
         tried = {backend_id}
-        for attempt in range(2):
+        max_attempts = 2 if allow_retry else 1
+        for attempt in range(max_attempts):
             host, port = BACKENDS[backend_id]
             url = f"http://{host}:{port}{request.path_qs}"
             self.metrics.record_request_start(backend_id)
@@ -498,6 +509,14 @@ class OmegaLBProxy:
     async def handle_admin(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
         """Control endpoint for the dashboard fault-injection controls."""
         try:
+            if _ADMIN_TOKEN:
+                token = request.headers.get("X-Omega-Admin-Token", "")
+                auth = request.headers.get("Authorization", "")
+                if auth.lower().startswith("bearer "):
+                    token = auth[7:].strip()
+                if token != _ADMIN_TOKEN:
+                    return aiohttp.web.Response(status=401, text="unauthorized")
+
             data = await request.json()
             # Kill/revive backend
             if "kill_backend" in data:
@@ -505,8 +524,9 @@ class OmegaLBProxy:
                 self.ring.set_health(i, False)
                 self.metrics.health[i] = False
                 # Tell the backend to simulate overload
+                host, port = BACKENDS[i]
                 async with self._session.post(
-                    f"http://127.0.0.1:{9000+i}/_admin",
+                    f"http://{host}:{port}/_admin",
                     json={"overload": True, "error_pct": 90}
                 ) as _:
                     pass
@@ -515,8 +535,9 @@ class OmegaLBProxy:
                 i = int(data["revive_backend"])
                 self.ring.set_health(i, True)
                 self.metrics.health[i] = True
+                host, port = BACKENDS[i]
                 async with self._session.post(
-                    f"http://127.0.0.1:{9000+i}/_admin",
+                    f"http://{host}:{port}/_admin",
                     json={"overload": False, "error_pct": 0.3}
                 ) as _:
                     pass

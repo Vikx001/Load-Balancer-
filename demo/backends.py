@@ -12,6 +12,8 @@ Environment variables (set dynamically by the proxy via /admin endpoint):
 """
 import asyncio, aiohttp.web, random, time, json, os, sys, signal
 
+BACKEND_HOST = os.environ.get("OMEGA_BACKEND_HOST", "127.0.0.1")
+
 # Per-backend personality
 PROFILES = [
     {"id": 0, "port": 9000, "base_ms": 45,  "jitter": 8,  "error_pct": 0.2},
@@ -116,9 +118,9 @@ async def run_backend(profile: dict):
     app    = make_app(profile)
     runner = aiohttp.web.AppRunner(app)
     await runner.setup()
-    site = aiohttp.web.TCPSite(runner, "127.0.0.1", profile["port"])
+    site = aiohttp.web.TCPSite(runner, BACKEND_HOST, profile["port"])
     await site.start()
-    print(f"[backends] Backend {profile['id']} → http://127.0.0.1:{profile['port']}  "
+    print(f"[backends] Backend {profile['id']} -> http://{BACKEND_HOST}:{profile['port']}  "
           f"(base {profile['base_ms']}ms, err {profile['error_pct']}%)")
     return runner
 

@@ -6,22 +6,22 @@ proxy:
   port: 8080
 
 backends:
-  - host: "backend-0"
+  - host: "backends"
     port: 9000
     name: "backend-0"
     zone: "local-a"
 
-  - host: "backend-1"
+  - host: "backends"
     port: 9001
     name: "backend-1"
     zone: "local-b"
 
-  - host: "backend-2"
+  - host: "backends"
     port: 9002
     name: "backend-2"
     zone: "local-c"
 
-  - host: "backend-3"
+  - host: "backends"
     port: 9003
     name: "backend-3"
     zone: "local-a"
@@ -37,3 +37,7 @@ rate_limiting:
   initial_rps: 1000
   min_rps: 100
   max_rps: 5000
+
+admin:
+  # Required for POST /_omega/admin (can also come from OMEGA_ADMIN_TOKEN env var)
+  token: "local-dev-token"
