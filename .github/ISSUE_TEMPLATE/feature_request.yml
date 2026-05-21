@@ -1,0 +1,61 @@
+name: Feature Request
+description: Propose a new feature or enhancement
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check existing issues and discussions before opening a feature request.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing the feature
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What problem does this solve? Why is this needed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How should it work? Include API/config changes if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other approaches did you think about?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Control Plane (Go)
+        - eBPF / Kernel
+        - ML / AI (Python)
+        - Desktop App (PySide6)
+        - Dashboard (Streamlit)
+        - Demo / Load Generator
+        - CI/CD / Build
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Research papers, prior art, related projects, diagrams
