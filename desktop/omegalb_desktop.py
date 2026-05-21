@@ -7,14 +7,16 @@ import secrets
 import signal
 import socket
 import subprocess
+import threading
 import sys
 import time
 import urllib.request
+import urllib.error
 import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QGridLayout,
@@ -204,8 +206,10 @@ class OmegaDesktop(QMainWindow):
         wiring_help.setWordWrap(True)
         wiring_layout.addWidget(wiring_help)
 
-        self.wiring_table = QTableWidget(0, 4)
-        self.wiring_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Zone"])
+        self.wiring_table = QTableWidget(0, 7)
+        self.wiring_table.setHorizontalHeaderLabels(
+            ["Name", "Host", "Port", "Zone", "Health", "Latency ms", "Test"]
+        )
         self.wiring_table.verticalHeader().setVisible(False)
         self.wiring_table.horizontalHeader().setStretchLastSection(True)
         self.wiring_table.setAlternatingRowColors(True)
@@ -220,11 +224,14 @@ class OmegaDesktop(QMainWindow):
         self.btn_demo_wiring.clicked.connect(self._load_demo_wiring)
         self.btn_save_wiring = QPushButton("Save Wiring")
         self.btn_save_wiring.clicked.connect(self._save_wiring_to_config)
+        self.btn_test_all = QPushButton("Test All Backends")
+        self.btn_test_all.clicked.connect(self._test_all_backends)
 
         wiring_actions.addWidget(self.btn_add_backend)
         wiring_actions.addWidget(self.btn_remove_backend)
         wiring_actions.addWidget(self.btn_demo_wiring)
         wiring_actions.addWidget(self.btn_save_wiring)
+        wiring_actions.addWidget(self.btn_test_all)
         wiring_actions.addStretch(1)
         wiring_layout.addLayout(wiring_actions)
 
@@ -303,6 +310,11 @@ class OmegaDesktop(QMainWindow):
         self.wiring_table.setItem(r, 1, QTableWidgetItem(str(host)))
         self.wiring_table.setItem(r, 2, QTableWidgetItem(str(port)))
         self.wiring_table.setItem(r, 3, QTableWidgetItem(str(zone)))
+        self.wiring_table.setItem(r, 4, QTableWidgetItem("-"))  # health
+        self.wiring_table.setItem(r, 5, QTableWidgetItem("-"))  # latency
+        btn = QPushButton("Check")
+        btn.clicked.connect(lambda checked=False, row=r: self._test_single_backend(row))
+        self.wiring_table.setCellWidget(r, 6, btn)
 
     def _remove_selected_backend_rows(self):
         rows = sorted({idx.row() for idx in self.wiring_table.selectedIndexes()}, reverse=True)
@@ -370,6 +382,57 @@ class OmegaDesktop(QMainWindow):
         except Exception as e:
             self._log(f"Could not load backend wiring from config: {e}")
             self._load_demo_wiring()
+
+    def _test_single_backend(self, row: int):
+        try:
+            host_item = self.wiring_table.item(row, 1)
+            port_item = self.wiring_table.item(row, 2)
+            host = host_item.text().strip() if host_item else ""
+            port_txt = port_item.text().strip() if port_item else ""
+
+            if not host or not port_txt.isdigit():
+                QMessageBox.warning(self, "Invalid backend", f"Row {row+1}: host/port invalid")
+                return
+
+            port = int(port_txt)
+            self.wiring_table.item(row, 4).setText("Testing...")
+
+            def run_test():
+                try:
+                    url = f"http://{host}:{port}/_health"
+                    t_start = time.perf_counter()
+                    with urllib.request.urlopen(url, timeout=2.0) as r:
+                        t_end = time.perf_counter()
+                        latency_ms = (t_end - t_start) * 1000
+                        if r.status == 200:
+                            self.wiring_table.item(row, 4).setText("UP")
+                            self.wiring_table.item(row, 4).setForeground(QColor(135, 247, 192))
+                            self.wiring_table.item(row, 5).setText(f"{latency_ms:.1f}")
+                            self._log(f"Backend {row+1} ({host}:{port}): UP ({latency_ms:.1f}ms)")
+                        else:
+                            self.wiring_table.item(row, 4).setText(f"DOWN ({r.status})")
+                            self.wiring_table.item(row, 4).setForeground(QColor(255, 156, 176))
+                            self._log(f"Backend {row+1} ({host}:{port}): DOWN (HTTP {r.status})")
+                except urllib.error.URLError as e:
+                    self.wiring_table.item(row, 4).setText("FAIL")
+                    self.wiring_table.item(row, 4).setForeground(QColor(255, 156, 176))
+                    self.wiring_table.item(row, 5).setText("N/A")
+                    self._log(f"Backend {row+1} ({host}:{port}): FAIL - {e.reason}")
+                except Exception as e:
+                    self.wiring_table.item(row, 4).setText("ERROR")
+                    self.wiring_table.item(row, 4).setForeground(QColor(255, 156, 176))
+                    self.wiring_table.item(row, 5).setText("-")
+                    self._log(f"Backend {row+1} ({host}:{port}): ERROR - {e}")
+
+            threading.Thread(target=run_test, daemon=True).start()
+
+        except Exception as e:
+            self._log(f"Test failed for row {row+1}: {e}")
+
+    def _test_all_backends(self):
+        self._log("Testing all backends...")
+        for r in range(self.wiring_table.rowCount()):
+            self._test_single_backend(r)
 
     def _save_wiring_to_config(self, show_popup: bool = True) -> bool:
         try:
