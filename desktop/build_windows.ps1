@@ -8,8 +8,14 @@ python -m venv .venv-desktop
 
 .\.venv-desktop\Scripts\pyinstaller `
   --noconfirm `
+  --clean `
   --windowed `
   --name OmegaLBDesktop `
+  --hidden-import demo.backends `
+  --hidden-import demo.proxy `
+  --hidden-import demo.loadgen `
+  --hidden-import ml.kan `
+  --hidden-import ml.cbf `
   --add-data "demo;demo" `
   --add-data "ml;ml" `
   --add-data "omega-lb.yaml;." `

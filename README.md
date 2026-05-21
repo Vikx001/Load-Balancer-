@@ -204,7 +204,7 @@ The dashboard auto-detects the running proxy and switches to **LIVE** mode (gree
 
 You only need **Python 3.11+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
 
-### Desktop app (no terminal workflow)
+### Desktop app (no terminal workflow, recommended)
 
 If you want a Postman-like desktop experience, use the native launcher in `desktop/`.
 It provides:
@@ -212,6 +212,7 @@ It provides:
 - Live KPIs (RPS, requests, health, error rate)
 - Backend table (latency/load/errors/vnodes/rate/KAN weight)
 - Built-in runtime activity pane
+- Secure local admin control path by default (token + allowlist + rate limit)
 
 Run from source:
 
@@ -230,6 +231,19 @@ make desktop-build-macos
 powershell -ExecutionPolicy Bypass -File desktop/build_windows.ps1
 # output: dist/OmegaLBDesktop/OmegaLBDesktop.exe
 ```
+
+### Production-grade desktop distribution checklist
+
+To ship this as a trusted desktop product (not just an unsigned binary), add these release steps:
+
+1. macOS code-sign + notarization (Developer ID Application certificate)
+2. Windows Authenticode signing for `OmegaLBDesktop.exe`
+3. Published checksums (SHA-256) per release artifact
+4. Auto-update channel with signed metadata (optional but recommended)
+
+Without signing/notarization, users may see OS security warnings on first launch.
+
+### CLI quick start (optional)
 
 ```bash
 # 1 — clone

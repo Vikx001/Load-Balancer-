@@ -3,10 +3,13 @@ import importlib
 import json
 import multiprocessing as mp
 import os
+import secrets
 import signal
+import socket
 import sys
 import time
 import urllib.request
+import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt
@@ -20,6 +23,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QCheckBox,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -64,10 +68,14 @@ class OmegaDesktop(QMainWindow):
 
         self.processes: dict[str, mp.Process] = {}
         self.last_snapshot: dict | None = None
+        self.runtime_started = False
 
         self.proxy_url = "http://127.0.0.1:8080"
         self.status_url = f"{self.proxy_url}/_omega/status"
         self.config_path = self._resolve_config_path()
+        self.admin_token = secrets.token_urlsafe(24)
+        self.admin_allowlist = "127.0.0.1/32,::1/128"
+        self.admin_rate_limit = "30"
 
         self._build_ui()
         self._setup_timer()
@@ -113,12 +121,21 @@ class OmegaDesktop(QMainWindow):
         self.btn_start.clicked.connect(self.start_stack)
         self.btn_stop = QPushButton("Stop Stack")
         self.btn_stop.clicked.connect(self.stop_stack)
+        self.btn_open_dashboard = QPushButton("Open Dashboard")
+        self.btn_open_dashboard.clicked.connect(self.open_dashboard)
+        self.btn_open_status = QPushButton("Open Status API")
+        self.btn_open_status.clicked.connect(self.open_status)
         self.btn_refresh = QPushButton("Refresh Now")
         self.btn_refresh.clicked.connect(self.poll_status)
+        self.chk_loadgen = QCheckBox("Auto-start load generator")
+        self.chk_loadgen.setChecked(True)
 
         controls.addWidget(self.btn_start)
         controls.addWidget(self.btn_stop)
+        controls.addWidget(self.btn_open_dashboard)
+        controls.addWidget(self.btn_open_status)
         controls.addWidget(self.btn_refresh)
+        controls.addWidget(self.chk_loadgen)
         controls.addStretch(1)
         root.addLayout(controls)
 
@@ -161,7 +178,10 @@ class OmegaDesktop(QMainWindow):
         info_layout = QVBoxLayout(info_box)
         self.runtime_label = QLabel(f"Config: {self.config_path}")
         self.runtime_label.setWordWrap(True)
+        self.runtime_mode = QLabel("Security mode: local-only admin control path")
+        self.runtime_mode.setWordWrap(True)
         info_layout.addWidget(self.runtime_label)
+        info_layout.addWidget(self.runtime_mode)
         right_col.addWidget(info_box, 1)
 
         main.addLayout(right_col, 2)
@@ -170,8 +190,11 @@ class OmegaDesktop(QMainWindow):
         self.setCentralWidget(central)
 
         open_proxy = QAction("Open Proxy Status", self)
-        open_proxy.triggered.connect(self.poll_status)
+        open_proxy.triggered.connect(self.open_status)
+        open_dashboard = QAction("Open Dashboard", self)
+        open_dashboard.triggered.connect(self.open_dashboard)
         self.menuBar().addAction(open_proxy)
+        self.menuBar().addAction(open_dashboard)
 
         self.setStyleSheet(
             """
@@ -208,31 +231,68 @@ class OmegaDesktop(QMainWindow):
         ts = time.strftime("%H:%M:%S")
         self.logs.append(f"[{ts}] {msg}")
 
+    def _is_port_free(self, host: str, port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.2)
+            return sock.connect_ex((host, port)) != 0
+
+    def _preflight_ports(self) -> bool:
+        checks = [("Proxy", "127.0.0.1", 8080), ("Dashboard", "127.0.0.1", 8501)]
+        conflicts = []
+        for name, host, port in checks:
+            if not self._is_port_free(host, port):
+                conflicts.append(f"{name} port {port} is already in use")
+
+        if conflicts:
+            QMessageBox.warning(self, "Port conflict", "\n".join(conflicts))
+            for c in conflicts:
+                self._log(f"Preflight failed: {c}")
+            return False
+        return True
+
     def _set_online(self, is_online: bool):
         self.status_chip.setText("ONLINE" if is_online else "OFFLINE")
         self.status_chip.setObjectName("ChipOnline" if is_online else "ChipOffline")
         self.status_chip.style().unpolish(self.status_chip)
         self.status_chip.style().polish(self.status_chip)
 
+    def open_dashboard(self):
+        webbrowser.open("http://127.0.0.1:8501")
+
+    def open_status(self):
+        webbrowser.open(self.status_url)
+
     def start_stack(self):
         if self.processes:
             self._log("Stack already running.")
             return
 
-        env_proxy = {"OMEGA_CONFIG": self.config_path}
+        if not self._preflight_ports():
+            return
+
+        env_proxy = {
+            "OMEGA_CONFIG": self.config_path,
+            "OMEGA_ADMIN_TOKEN": self.admin_token,
+            "OMEGA_ADMIN_ALLOWLIST": self.admin_allowlist,
+            "OMEGA_ADMIN_RATE_LIMIT_PER_MIN": self.admin_rate_limit,
+        }
         env_loadgen = {"OMEGA_PROXY_URL": self.proxy_url}
 
         plans = [
             ("backends", "demo.backends", None),
             ("proxy", "demo.proxy", env_proxy),
-            ("loadgen", "demo.loadgen", env_loadgen),
         ]
+        if self.chk_loadgen.isChecked():
+            plans.append(("loadgen", "demo.loadgen", env_loadgen))
+
+        self._log("Applying secure local defaults for admin path (token+allowlist+rate-limit).")
 
         for name, module, env in plans:
             proc = mp.Process(target=_run_module_main, args=(module, env), daemon=True, name=name)
             proc.start()
             self.processes[name] = proc
             self._log(f"Started {name} (pid={proc.pid})")
+        self.runtime_started = True
 
     def stop_stack(self):
         if not self.processes:
@@ -249,15 +309,34 @@ class OmegaDesktop(QMainWindow):
             self._log(f"Stopped {name}")
 
         self.processes.clear()
+        self.runtime_started = False
         self._set_online(False)
 
+    def _watchdog(self):
+        if not self.processes:
+            return
+        for name, proc in list(self.processes.items()):
+            if not proc.is_alive():
+                exitcode = proc.exitcode
+                self._log(f"Process crash detected: {name} exited with code {exitcode}")
+                del self.processes[name]
+                QMessageBox.warning(
+                    self,
+                    "Process exited",
+                    f"{name} process exited unexpectedly (code {exitcode}).\nCheck config/backends and restart.",
+                )
+                break
+
     def poll_status(self):
+        self._watchdog()
         try:
             with urllib.request.urlopen(self.status_url, timeout=1.5) as r:
                 snapshot = json.loads(r.read().decode("utf-8"))
             self.last_snapshot = snapshot
             self.render_snapshot(snapshot)
             self._set_online(True)
+            if self.runtime_started:
+                self.runtime_mode.setText("Security mode: local-only admin control path (enforced)")
         except Exception:
             self._set_online(False)
 
