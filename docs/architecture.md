@@ -258,3 +258,9 @@ If you are debugging a specific class of problem, start in the component that ow
 - [README.md](../README.md)
 - [RELEASE_NOTES.md](../RELEASE_NOTES.md)
 - [releases/v1.0.0-alpha.1/INSTALLATION.md](../releases/v1.0.0-alpha.1/INSTALLATION.md)
+
+## Code Graphs
+
+- Project code graph (AST-derived): [docs/graphify/graph.json](docs/graphify/graph.json)
+- Graph report and diagnostics: [docs/graphify/GRAPH_REPORT.md](docs/graphify/GRAPH_REPORT.md)
+- Regenerate locally: run `make docs-graph` (CI also updates `docs/graphify` on a schedule).
