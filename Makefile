@@ -219,14 +219,12 @@ clean: ## Remove build artifacts
 
 	.PHONY: docs-graph
 
-	docs-graph: ## Generate AST-only Graphify outputs and copy to docs/graphify
-		@echo "  [docs] generating AST-only graph (AST-only, no LLM)"
-		python3 -m venv .venv-graphify
-		. .venv-graphify/bin/activate
-		.venv-graphify/bin/pip install --upgrade pip
-		.venv-graphify/bin/pip install --upgrade graphifyy
-		.venv-graphify/bin/graphify update . --no-cluster --no-viz --out graphify-out || true
-		rm -rf docs/graphify || true
-		mkdir -p docs/graphify
-		rsync -a graphify-out/ docs/graphify/
-		@echo "  [docs] done: docs/graphify"
+docs-graph: ## Regenerate local AST graph (graphify-out/) and update docs/graphify/GRAPH_REPORT.md
+	@echo "  [docs] generating AST-only graph into graphify-out/ (no LLM)"
+	@[ -d .venv-graphify ] || python3 -m venv .venv-graphify
+	.venv-graphify/bin/pip install -q --upgrade graphifyy
+	.venv-graphify/bin/graphify update . --no-cluster
+	@mkdir -p docs/graphify
+	cp graphify-out/GRAPH_REPORT.md docs/graphify/GRAPH_REPORT.md
+	@echo "  [docs] graph ready at graphify-out/graph.json"
+	@echo "  [docs] report committed to docs/graphify/GRAPH_REPORT.md"
