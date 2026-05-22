@@ -1,0 +1,597 @@
+{
+  "/Volumes/work/Load balancer/start.sh": {
+    "mtime": 1779041419.04363,
+    "ast_hash": "d89206bbfef42e508500f8fb40b490d3",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/demo/run.py": {
+    "mtime": 1779286291.6651442,
+    "ast_hash": "cf6367cc39d0eba014322ba41a056678",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/demo/metrics_store.py": {
+    "mtime": 1779040765.8854806,
+    "ast_hash": "57fca97b4f585a01cb150a54fcd0afe7",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/demo/proxy.py": {
+    "mtime": 1779343457.585965,
+    "ast_hash": "8cfe6fecf669919abd8863210cad8fc1",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/demo/__init__.py": {
+    "mtime": 1779028848.2364552,
+    "ast_hash": "fc2781ac42deb86c78e3e62ab1c197b0",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/demo/backends.py": {
+    "mtime": 1779343045.0987136,
+    "ast_hash": "4f0660ecfcc23ed00b40bb254cbdfd28",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/demo/loadgen.py": {
+    "mtime": 1779343045.0986917,
+    "ast_hash": "993bca47b1fac6d3ba77256b192c459f",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/bench/benchmark.py": {
+    "mtime": 1779026245.689656,
+    "ast_hash": "c3135006d68878c4bad8976c5738fc28",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/bench/run_http_bench.sh": {
+    "mtime": 1779026245.6896558,
+    "ast_hash": "099a80281a197efdea9b4ec82709a0b5",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/tests/test_ml_modules.py": {
+    "mtime": 1779039639.0617735,
+    "ast_hash": "2138e704aa7272bc2f2f1c35711458cd",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/tests/test_all_layers.py": {
+    "mtime": 1779027698.0024211,
+    "ast_hash": "b95917a63c89fd9bf8c611e90c9149e3",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/tests/test_proxy_unit.py": {
+    "mtime": 1779243233.1158044,
+    "ast_hash": "85f5e9879d27d5a3b9775e6522704df5",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/tests/test_integration.py": {
+    "mtime": 1779243281.3258073,
+    "ast_hash": "ded34ad7f54226f92fc6321a70cd7d35",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/desktop/build_windows.ps1": {
+    "mtime": 1779344712.3718054,
+    "ast_hash": "c1e5f412601e53e43febd1682f31e2a3",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/desktop/build_macos.sh": {
+    "mtime": 1779344707.305679,
+    "ast_hash": "267c37c464013ec6b4d5cd1aadbce1c6",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/desktop/omegalb_desktop.py": {
+    "mtime": 1779345683.8496144,
+    "ast_hash": "d494efa3fb55d73293a9becedf68cc59",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/etc/jupyter/nbconfig/notebook.d/pydeck.json": {
+    "mtime": 1779344490.6456597,
+    "ast_hash": "9862b53a8912028d4078fe0d147e21e8",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/labextensions/jupyterlab-plotly/package.json": {
+    "mtime": 1779344487.1330028,
+    "ast_hash": "8b5838d909b99b5d5841dac41fc0739d",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/labextensions/jupyterlab-plotly/install.json": {
+    "mtime": 1779344487.139628,
+    "ast_hash": "07b12b034540dbfa808fa6cb3cd0a66a",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/labextensions/jupyterlab-plotly/static/1.9daa5160b7fc741623bf.js": {
+    "mtime": 1779344487.1385374,
+    "ast_hash": "5da8d341e03488a623fbe62ced2d3bfb",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/labextensions/jupyterlab-plotly/static/style.js": {
+    "mtime": 1779344487.1394765,
+    "ast_hash": "8259c5c9dd06dde49a5e3abaad871e37",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/labextensions/jupyterlab-plotly/static/third-party-licenses.json": {
+    "mtime": 1779344487.1395533,
+    "ast_hash": "d81b2495a0a1ee1a6c87fd7de8a0f43c",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/labextensions/jupyterlab-plotly/static/remoteEntry.b2077f01f9b03ba2c63d.js": {
+    "mtime": 1779344487.139393,
+    "ast_hash": "6fee8ddd85c735f2e90d4b6996a508bb",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/nbextensions/pydeck/index.js": {
+    "mtime": 1779344490.6501925,
+    "ast_hash": "1dfb48a117134f6b5ba509f9d85b5057",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/nbextensions/pydeck/extensionRequires.js": {
+    "mtime": 1779344490.645855,
+    "ast_hash": "917fa0380eae8e2b2da69914eebc9eac",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/dashboard/app.py": {
+    "mtime": 1779286291.665347,
+    "ast_hash": "1188b3dcbcc597a2c566918cdb481409",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/cmd/omegalb/main.go": {
+    "mtime": 1779025760.1815445,
+    "ast_hash": "0a7225d3e9ec4a5d7247aa8e0ec9309a",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/metrics/cardinality.go": {
+    "mtime": 1779162210.89721,
+    "ast_hash": "a736c1e3d7935b03403e5fc43aa4f9f1",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/metrics/accessor.go": {
+    "mtime": 1779026333.4850001,
+    "ast_hash": "2b00c327982f714790ac9b34515f7a48",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/metrics/collector.go": {
+    "mtime": 1779161985.7643206,
+    "ast_hash": "aa8ccf1e8aa663bca28df257704b41e8",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/consensus/mem_store.go": {
+    "mtime": 1779169850.569028,
+    "ast_hash": "c0b738725c861b9fccefef484f9379fd",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/consensus/coordinator.go": {
+    "mtime": 1779170088.7978559,
+    "ast_hash": "48117bb6d7b03492b0082393d13e0783",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/fallback/nginx.go": {
+    "mtime": 1779163391.9643755,
+    "ast_hash": "f12dfc64b7acaf36faa051a6c416210a",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/config/config.go": {
+    "mtime": 1779163204.3202343,
+    "ast_hash": "22de9dc2113f5892545393819072f819",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/health/circuit_breaker.go": {
+    "mtime": 1779161175.015274,
+    "ast_hash": "e5c90dc551bb4e2f612eab14d24c5b93",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/health/checker.go": {
+    "mtime": 1779161175.0155313,
+    "ast_hash": "504b2e107d1d4b5b170f4425afe30a86",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/admin/server.go": {
+    "mtime": 1779169850.5688555,
+    "ast_hash": "d4f5680bbdb41819345ae67d987fc29b",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/observability/flight_recorder.go": {
+    "mtime": 1779162041.3508718,
+    "ast_hash": "706a1fa89b3cdbf96fbc41d2d8139bf3",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ratelimit/dqn_a3c.go": {
+    "mtime": 1779160427.2685244,
+    "ast_hash": "51ced6d5fdee6cf15a9480c940e20825",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/tls/inspector.go": {
+    "mtime": 1779162926.5803406,
+    "ast_hash": "d1d594ccd6ef1c1234782c374ee1440b",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/daemon/daemon.go": {
+    "mtime": 1779169850.568922,
+    "ast_hash": "081665c9267c458a368bf7c33cec31da",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/telemetry/exporter.go": {
+    "mtime": 1779162210.8972318,
+    "ast_hash": "898b646d887cdff29a57997e7f625c74",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/maglev.go": {
+    "mtime": 1779162759.3307471,
+    "ast_hash": "6d0caa6fd75204df008d9a97aedbaf77",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/wal.go": {
+    "mtime": 1779161045.5010126,
+    "ast_hash": "b9a43bd1fece883c84f39ec20e99dab0",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/affinity.go": {
+    "mtime": 1779161045.506039,
+    "ast_hash": "0a5800626a5cbb110d97c767dcceb361",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/slowstart.go": {
+    "mtime": 1779161390.3943565,
+    "ast_hash": "1eca4b10f63202f151831472021c8ef1",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/ring.go": {
+    "mtime": 1779161495.14137,
+    "ast_hash": "197ff515ed33da172e6281edce55772f",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/helpers.go": {
+    "mtime": 1779026333.48472,
+    "ast_hash": "bc202dc6be6d63a3f2d7bce50638c323",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/reconcile.go": {
+    "mtime": 1779161045.500926,
+    "ast_hash": "14ed18b0a5b5e598eabb145164b4df78",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ring/pool_monitor.go": {
+    "mtime": 1779161306.169927,
+    "ast_hash": "555ebbf225eb316a273185591f7b61ed",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/ebpf/loader.go": {
+    "mtime": 1779246219.871903,
+    "ast_hash": "9e33a6f0013b971684534127d3309afc",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/xds/server.go": {
+    "mtime": 1779026026.3652136,
+    "ast_hash": "dd628ec15879330bd12e610de24eb35e",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/numa/topology.go": {
+    "mtime": 1779162759.330728,
+    "ast_hash": "f2fb8562c08161a14fd5bb2c59e6c17b",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/rl/ood.go": {
+    "mtime": 1779160427.2685072,
+    "ast_hash": "7f7d700964c54db296722569197936fb",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/rl/kan_actor.go": {
+    "mtime": 1779160427.2685192,
+    "ast_hash": "b0a94ccef32dc19c0f915acd3d05c29f",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/rl/cbf.go": {
+    "mtime": 1779160427.265228,
+    "ast_hash": "7d71ce7a4c9d843ffd122174daed08c7",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/rl/agent.go": {
+    "mtime": 1779162325.3114152,
+    "ast_hash": "c7da8bfd712a4f4f033aa5efb6700026",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/controlplane/internal/rl/model_store.go": {
+    "mtime": 1779162260.2009625,
+    "ast_hash": "68f80aedb0a3e0f1e30da2f481ba2697",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/__init__.py": {
+    "mtime": 1779038762.0206587,
+    "ast_hash": "a2c031078969438e3d8d5255d9c60e76",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/dqn_a3c/train_dqn_a3c.py": {
+    "mtime": 1779248319.4826057,
+    "ast_hash": "6c0f7ba43523d8f834f3009a8a42a005",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/cbf/cbf_runtime.py": {
+    "mtime": 1779038898.3432186,
+    "ast_hash": "ba02a5b8b3efec3d8831c1f602fe2d61",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/cbf/__init__.py": {
+    "mtime": 1779038898.3432252,
+    "ast_hash": "04435e743dbb76a81af62e7a9f4ee2c3",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/simulation/__init__.py": {
+    "mtime": 1779038924.8486493,
+    "ast_hash": "c9c77cba667046c8e0d5a4ddf6d270ae",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/simulation/lb_env.py": {
+    "mtime": 1779160427.2652383,
+    "ast_hash": "7f96932e23e389545402d0d35b02b378",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/kan/__init__.py": {
+    "mtime": 1779038898.3432024,
+    "ast_hash": "574205b9400620867e8b1cac67f51dfd",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/kan/kan_inference.py": {
+    "mtime": 1779039740.223449,
+    "ast_hash": "32668dd1eec50da572eb820aff60f5d9",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/ppo/train_ppo_kan.py": {
+    "mtime": 1779027556.9053051,
+    "ast_hash": "813bb129e462b8ae96eaed84aff5d1f3",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/scripts/health_check.sh": {
+    "mtime": 1779243154.9817834,
+    "ast_hash": "b2d5aff6f8222e2da01bfe7a001f15bb",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/scripts/smoke_test.sh": {
+    "mtime": 1779248712.8439124,
+    "ast_hash": "3933fc6aa63d8389bf8287469a0fe6ce",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/scripts/reset.sh": {
+    "mtime": 1779243154.981783,
+    "ast_hash": "2d3fe4a900935ec9986afc1270aa3082",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ebpf/kern/connection_relay.bpf.c": {
+    "mtime": 1779161306.1698773,
+    "ast_hash": "aba03598f325d6affd1b4c7038e37853",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ebpf/kern/metrics_collector.bpf.c": {
+    "mtime": 1779161947.035197,
+    "ast_hash": "019bb9b0cc557006e031c218e6f07dde",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ebpf/kern/route_manager.bpf.c": {
+    "mtime": 1779162926.5799856,
+    "ast_hash": "d6a74739147968c22e0a4989a70d4d08",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ebpf/kern/filter_manager.bpf.c": {
+    "mtime": 1779159237.7580593,
+    "ast_hash": "8cf22280ef9fb49def153fc549336112",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ebpf/kern/lb_policy.bpf.c": {
+    "mtime": 1779162852.7696128,
+    "ast_hash": "42d0324c4ee1329c52a5491392106ca9",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ebpf/headers/omega_proto.h": {
+    "mtime": 1779025760.1847491,
+    "ast_hash": "7d2c017e2394461fa8468d2a000f1463",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ebpf/headers/omega_maps.h": {
+    "mtime": 1779260401.9095523,
+    "ast_hash": "22f1bcc4ff28c6e8b6fa516e1fd3bb83",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/requirements.txt": {
+    "mtime": 1779040755.0095296,
+    "ast_hash": "2ae78fedad5c1f365780d0c0a5cbb929",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.pre-commit-config.yaml": {
+    "mtime": 1779243282.1274595,
+    "ast_hash": "50495cdc31ebcb1d3cd9b801f556f4c4",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/THIRD_PARTY_PYTHON_LICENSES.md": {
+    "mtime": 1779435713.138833,
+    "ast_hash": "a96bce0c433171bea4f7dc06bb6df696",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/omega-lb.yaml": {
+    "mtime": 1779343303.7937973,
+    "ast_hash": "35ce51b8dd87c338345726f20e74033e",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/THIRD_PARTY_NOTICES.md": {
+    "mtime": 1779435610.7978516,
+    "ast_hash": "ffb306373a26c61bb29e71822c6b81da",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/README.md": {
+    "mtime": 1779435368.9636521,
+    "ast_hash": "77575fbcb3ab18ab7771248dce186621",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/omega-lb-docker.yaml": {
+    "mtime": 1779343303.7937686,
+    "ast_hash": "093bbd4c6cbe831f8f15539ec01ceeb7",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/CONTRIBUTING.md": {
+    "mtime": 1779347845.7097049,
+    "ast_hash": "5959b9b09650b09eff86d0f1791a4d30",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/RELEASE_NOTES.md": {
+    "mtime": 1779345801.8248715,
+    "ast_hash": "49b0c6953a648c7328a3beeef1b2b702",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/releases/v1.0.0-alpha.1/RELEASE_SUMMARY.md": {
+    "mtime": 1779346711.5876296,
+    "ast_hash": "2236f4c709a7e6f4678e1847684be4fb",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/releases/v1.0.0-alpha.1/WINDOWS_BUILD.md": {
+    "mtime": 1779345917.4139733,
+    "ast_hash": "611a579ab66db4d94f43c8e9da6aa6b5",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/releases/v1.0.0-alpha.1/INSTALLATION.md": {
+    "mtime": 1779345891.099641,
+    "ast_hash": "fbda7876dba491e3a767c7bd794c38d7",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/lima/omega.yaml": {
+    "mtime": 1779259497.6060057,
+    "ast_hash": "687d79cc6d7440e000d254f078ebaae8",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/docker/docker-compose-demo.yml": {
+    "mtime": 1779343303.793754,
+    "ast_hash": "780e600fa4d227146564ba5a1ad40859",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/docker/docker-compose.yml": {
+    "mtime": 1779026211.014021,
+    "ast_hash": "346d2c006735b29c617f8949bbdd61f9",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/stages/stage5-rl-live.yaml": {
+    "mtime": 1779163316.4161696,
+    "ast_hash": "2c71d013b22e6b57e393ce26d1de5a1e",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/stages/stage2-ha-ring.yaml": {
+    "mtime": 1779163316.4161706,
+    "ast_hash": "bef47e3577892c9e12a99b4e4aa2aa57",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/stages/stage4-rl-shadow.yaml": {
+    "mtime": 1779163316.4079385,
+    "ast_hash": "9c10f17c86bd38162c2b55cec6d93da5",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/stages/stage3-health-metrics.yaml": {
+    "mtime": 1779163316.4078345,
+    "ast_hash": "8e0b2757246fbb4436e7cb55c6e5e84c",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/stages/stage1-ebpf-roundrobin.yaml": {
+    "mtime": 1779163316.4077988,
+    "ast_hash": "d764551f860f95dd23428fab945ae8f6",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/kubernetes/daemonset-restricted.yaml": {
+    "mtime": 1779163391.9643757,
+    "ast_hash": "2f0df8ccba5e96c3429a76c4ba6745ca",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/kubernetes/daemonset.yaml": {
+    "mtime": 1779026211.0139813,
+    "ast_hash": "6ecc3f3fb683adb25655c9423f04a0e8",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/deploy/kubernetes/daemonset-fallback.yaml": {
+    "mtime": 1779163459.2191372,
+    "ast_hash": "2b441bf7a0ead7189bce563ff8d81e17",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/desktop/requirements.txt": {
+    "mtime": 1779344042.6689463,
+    "ast_hash": "ffd95a65665b509914bc34f9f2fbf0bd",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.venv-desktop/share/jupyter/labextensions/jupyterlab-plotly/static/1.9daa5160b7fc741623bf.js.LICENSE.txt": {
+    "mtime": 1779344487.139288,
+    "ast_hash": "6dd85c5bae3d3cf3b9ee55dbc5282285",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/architecture.md": {
+    "mtime": 1779349698.5594933,
+    "ast_hash": "a56f3ced12173a262c57b4a2f8a41290",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/security/ebpf-capability-justification.md": {
+    "mtime": 1779163459.2191367,
+    "ast_hash": "8743417c3d6f4103b2721eb267e974d1",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/dashboard/requirements.txt": {
+    "mtime": 1779243327.5880582,
+    "ast_hash": "1f1b1f196b7f056227fa0d14802645fe",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/ml/requirements.txt": {
+    "mtime": 1779026169.3296957,
+    "ast_hash": "2af8f700aa313aa7d131d75025660216",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.github/pull_request_template.md": {
+    "mtime": 1779347845.709557,
+    "ast_hash": "9d6854b1638fb32dc428c47ef4551834",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.github/workflows/build-windows.yml": {
+    "mtime": 1779347337.0176857,
+    "ast_hash": "c4d1006d23322343d474d8e5aaf7a200",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.github/workflows/ci.yml": {
+    "mtime": 1779248319.482629,
+    "ast_hash": "fc1cafd35bc94876b4b817e7b180440e",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.github/ISSUE_TEMPLATE/feature_request.yml": {
+    "mtime": 1779347845.709438,
+    "ast_hash": "6244543e343a35bb70d3f2709e4290fd",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/.github/ISSUE_TEMPLATE/bug_report.yml": {
+    "mtime": 1779347845.7093055,
+    "ast_hash": "666b1b943a006e9ea15680126c245fb9",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/dashboard-charts.png": {
+    "mtime": 1779285690.6413038,
+    "ast_hash": "abc2b3dd6450a1689e3218e7c44fba40",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/dashboard-full.png": {
+    "mtime": 1779285716.8046262,
+    "ast_hash": "9cfc800b9d9c79d1caba4e156a1fa8dc",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/dashboard-health.png": {
+    "mtime": 1779285704.1054974,
+    "ast_hash": "c1b4f75445f1be37b9077f686d8ee93b",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/dashboard-backend-gauges.png": {
+    "mtime": 1779285688.5725129,
+    "ast_hash": "802c6c5580f0d369a98af5630a746c86",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/dashboard-routing.png": {
+    "mtime": 1779285700.8474615,
+    "ast_hash": "d86cf77bd47f15109cbedbb63920dcae",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/request-proof.png": {
+    "mtime": 1779286349.3920975,
+    "ast_hash": "73333838191307a29ad7846536db04a6",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/dashboard-overview.png": {
+    "mtime": 1779285678.09369,
+    "ast_hash": "18a816b30a36e3785f13a4d802bb692b",
+    "semantic_hash": ""
+  },
+  "/Volumes/work/Load balancer/docs/screenshots/architecture-flow.png": {
+    "mtime": 1779285928.2347953,
+    "ast_hash": "1530a58cfac0ddbf0f8bf25818eedd8b",
+    "semantic_hash": ""
+  }
+}
