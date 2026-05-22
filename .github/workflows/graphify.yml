@@ -36,11 +36,16 @@ jobs:
       - name: Run Graphify update (AST-only)
         run: |
           . .venv-graphify/bin/activate
-          graphify update . --no-cluster --no-viz --out graphify-out || true
+          # --no-viz and --out are not valid for `update`; only --no-cluster is supported
+          graphify update . --no-cluster
 
       - name: Move outputs to docs/graphify
         run: |
-          rm -rf docs/graphify || true
+          if [ ! -d graphify-out ]; then
+            echo "graphify-out not found – Graphify extraction produced no output, skipping"
+            exit 1
+          fi
+          rm -rf docs/graphify
           mkdir -p docs/graphify
           rsync -a graphify-out/ docs/graphify/
 
