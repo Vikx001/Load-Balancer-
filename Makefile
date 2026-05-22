@@ -216,3 +216,17 @@ clean: ## Remove build artifacts
 	rm -rf bin/ $(EBPF_DIR)/*.bpf.o
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
+
+	.PHONY: docs-graph
+
+	docs-graph: ## Generate AST-only Graphify outputs and copy to docs/graphify
+		@echo "  [docs] generating AST-only graph (AST-only, no LLM)"
+		python3 -m venv .venv-graphify
+		. .venv-graphify/bin/activate
+		.venv-graphify/bin/pip install --upgrade pip
+		.venv-graphify/bin/pip install --upgrade graphifyy
+		.venv-graphify/bin/graphify update . --no-cluster --no-viz --out graphify-out || true
+		rm -rf docs/graphify || true
+		mkdir -p docs/graphify
+		rsync -a graphify-out/ docs/graphify/
+		@echo "  [docs] done: docs/graphify"
