@@ -12,6 +12,7 @@
 // label set can get there in minutes.
 //
 // ─── THE FIX ─────────────────────────────────────────────────────────────────
+//
 //  1. Per-dimension cardinality cap: once a dimension (e.g. "path") has seen
 //     maxValues distinct label values, any new value is replaced with "_overflow".
 //     This bounds series count at maxValues×(other dimensions).

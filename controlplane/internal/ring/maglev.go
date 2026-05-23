@@ -30,6 +30,7 @@
 // slow-start/session-affinity logic.  It is NOT in the hot eBPF path.
 //
 // ─── MAGLEV ALGORITHM ────────────────────────────────────────────────────────
+//
 //  1. For each backend b, generate a permutation of M slots using:
 //     offset = hash(b, "offset") % M
 //     skip   = hash(b, "skip")   % (M-1) + 1   (must be non-zero)

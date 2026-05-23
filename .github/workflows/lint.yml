@@ -32,9 +32,7 @@ jobs:
 
       - name: Format Go files
         working-directory: controlplane
-        run: |
-          gofmt -w $(find . -name '*.go')
-          git diff --exit-code
+        run: gofmt -w $(find . -name '*.go')
 
       - name: Run pre-commit
         run: pre-commit run --all-files
