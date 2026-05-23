@@ -86,6 +86,8 @@ cd "Load-Balancer-"
 
 For a local evaluation, you do not need Kubernetes or a cloud account. A standard Python environment is enough.
 
+Developer tooling: For AI-assisted development and token-efficient code navigation, see [GRAPHIFY.md](GRAPHIFY.md) for how to build and query the local Graphify code graph (recommended for contributors using Copilot or other AI assistants).
+
 ---
 
 ### The Five Routing Layers
