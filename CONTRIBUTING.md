@@ -13,6 +13,7 @@ Thank you for your interest in contributing. This document covers everything you
     - [Measured Token Savings](#measured-token-savings)
     - [How It Works in This Repo](#how-it-works-in-this-repo)
     - [Setting Up Graphify Locally](#setting-up-graphify-locally)
+    - [Pre-commit \& Linting (recommended)](#pre-commit--linting-recommended)
     - [Using Graphify Queries Manually](#using-graphify-queries-manually)
     - [Keeping the Graph Fresh](#keeping-the-graph-fresh)
     - [Why This Matters for Contributors](#why-this-matters-for-contributors)
@@ -85,6 +86,25 @@ After cloning the repo, build the local graph once:
 # Generates graphify-out/graph.json (not committed to git — local only)
 make docs-graph
 ```
+
+### Pre-commit & Linting (recommended)
+
+We enforce formatting and basic lint checks locally with `pre-commit`. Run the following once to install developer tooling and hooks:
+
+```bash
+make dev-setup
+make precommit-install
+```
+
+Quick checks:
+
+```bash
+make precommit-check   # run pre-commit checks across the repo
+make fmt-go            # format Go files in-place
+```
+
+CI will also run the same checks on PRs via `.github/workflows/lint.yml`.
+
 
 The graph is regenerated automatically whenever you run `make docs-graph`. It takes about 30–60 seconds for the full repository. Run it again after large refactors.
 

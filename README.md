@@ -88,6 +88,33 @@ For a local evaluation, you do not need Kubernetes or a cloud account. A standar
 
 Developer tooling: For AI-assisted development and token-efficient code navigation, see [GRAPHIFY.md](GRAPHIFY.md) for how to build and query the local Graphify code graph (recommended for contributors using Copilot or other AI assistants).
 
+Local developer setup (recommended)
+----------------------------------
+
+Create a reproducible developer environment and install pre-commit hooks:
+
+```bash
+make dev-setup
+# then run one-time
+make precommit-install
+```
+
+Quick checks you can run:
+
+```bash
+# Run pre-commit checks across the repo
+make precommit-check
+
+# Format Go files in-place
+make fmt-go
+
+# Regenerate the local Graphify AST (keeps large graph out of git)
+make docs-graph
+
+# Validate an Anthropic/Claude API key (no model tokens consumed)
+ANTHROPIC_API_KEY=sk-... python tools/check_claude_key.py
+```
+
 ---
 
 ### The Five Routing Layers

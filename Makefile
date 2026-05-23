@@ -228,3 +228,21 @@ docs-graph: ## Regenerate local AST graph (graphify-out/) and update docs/graphi
 	cp graphify-out/GRAPH_REPORT.md docs/graphify/GRAPH_REPORT.md
 	@echo "  [docs] graph ready at graphify-out/graph.json"
 	@echo "  [docs] report committed to docs/graphify/GRAPH_REPORT.md"
+
+.PHONY: dev-setup precommit-install precommit-check fmt-go
+
+dev-setup: ## Create Python venv and install developer tooling (pre-commit, black, ruff, isort)
+	@echo "  [dev] creating .venv and installing dev tools"
+	@[ -d .venv ] || python3 -m venv .venv
+	.venv/bin/pip install --upgrade pip
+	.venv/bin/pip install --upgrade pre-commit black ruff isort isort
+	.venv/bin/pre-commit install || true
+
+precommit-install: ## Install pre-commit hooks (uses .venv if present)
+	@if [ -x .venv/bin/pre-commit ]; then .venv/bin/pre-commit install; else pip install pre-commit && pre-commit install; fi
+
+precommit-check: ## Run pre-commit checks across the repository
+	@command -v .venv/bin/pre-commit >/dev/null 2>&1 && .venv/bin/pre-commit run --all-files || pre-commit run --all-files
+
+fmt-go: ## Run gofmt across all tracked Go files
+	@gofmt -s -w $(shell git ls-files '*.go')
