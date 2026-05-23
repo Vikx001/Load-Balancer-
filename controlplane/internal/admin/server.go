@@ -3,21 +3,22 @@
 // ─── WHY SREs NEED THIS DURING INCIDENTS ─────────────────────────────────────
 // At 3am, paged for a latency spike, an SRE faces a black box:
 //
-//   "The load balancer is routing 60% of traffic to backend-3.
-//    Backend-3 is saturated.  Why?"
+//	"The load balancer is routing 60% of traffic to backend-3.
+//	 Backend-3 is saturated.  Why?"
 //
 // Without explainability:
-//   • The RL agent's decision log is in zap.Debug level — not visible at runtime
-//   • The RL weight vector is in memory, unreachable without a debugger
-//   • The only option is to kill the process, losing all routing state
+//   - The RL agent's decision log is in zap.Debug level — not visible at runtime
+//   - The RL weight vector is in memory, unreachable without a debugger
+//   - The only option is to kill the process, losing all routing state
 //
 // With this admin server:
-//   $ curl http://localhost:9000/admin/explain/recent | jq '.[-1]'
-//   → { backend_id: 3, reason: "normal", vnodes_at_select: 122, probe_idx: 0 }
-//   $ curl http://localhost:9000/admin/mode   # check current mode
-//   $ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"ASSISTED"}'  # bypass RL
-//   $ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"MANUAL","weights":[0.33,0.33,0.34]}'
-//   $ curl http://localhost:9000/admin/healthz  # confirm daemon is alive
+//
+//	$ curl http://localhost:9000/admin/explain/recent | jq '.[-1]'
+//	→ { backend_id: 3, reason: "normal", vnodes_at_select: 122, probe_idx: 0 }
+//	$ curl http://localhost:9000/admin/mode   # check current mode
+//	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"ASSISTED"}'  # bypass RL
+//	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"MANUAL","weights":[0.33,0.33,0.34]}'
+//	$ curl http://localhost:9000/admin/healthz  # confirm daemon is alive
 //
 // ─── SECURITY NOTE ───────────────────────────────────────────────────────────
 // This server MUST be bound to a private/loopback interface (:9000 by default).
@@ -313,20 +314,20 @@ func modeString(m rl.AgentMode) string {
 //   $ curl http://localhost:9000/admin/ring | jq '.backends[] | {name: .id, vnodes, weight_pct, healthy}'
 
 type ringBackendInfo struct {
-	ID        uint32  `json:"id"`
-	IP        string  `json:"ip"`
-	Port      uint16  `json:"port"`
-	Vnodes    int     `json:"vnodes"`
-	WeightPct float64 `json:"weight_pct"` // percentage of total vnodes
-	Healthy   bool    `json:"healthy"`
-	Stateful  bool    `json:"stateful"`
-	ActiveReqs int64  `json:"active_reqs"`
+	ID         uint32  `json:"id"`
+	IP         string  `json:"ip"`
+	Port       uint16  `json:"port"`
+	Vnodes     int     `json:"vnodes"`
+	WeightPct  float64 `json:"weight_pct"` // percentage of total vnodes
+	Healthy    bool    `json:"healthy"`
+	Stateful   bool    `json:"stateful"`
+	ActiveReqs int64   `json:"active_reqs"`
 }
 
 type ringResponse struct {
-	Backends    []ringBackendInfo `json:"backends"`
-	TotalVnodes int               `json:"total_vnodes"`
-	BackendCount int              `json:"backend_count"`
+	Backends     []ringBackendInfo `json:"backends"`
+	TotalVnodes  int               `json:"total_vnodes"`
+	BackendCount int               `json:"backend_count"`
 }
 
 func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {

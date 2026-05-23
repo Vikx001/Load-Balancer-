@@ -7,8 +7,9 @@
 // codes = 200,000 active series — enough to OOM a Prometheus node within hours.
 //
 // This exporter enforces the following label set for all per-request metrics:
-//   ALLOWED:   backend_id (opaque uint32), service_id (opaque uint32)
-//   DISALLOWED as labels: backend_ip, path, method, user_id, request_id
+//
+//	ALLOWED:   backend_id (opaque uint32), service_id (opaque uint32)
+//	DISALLOWED as labels: backend_ip, path, method, user_id, request_id
 //
 // Path-level analysis belongs in structured logs and exemplars, not counters.
 package telemetry

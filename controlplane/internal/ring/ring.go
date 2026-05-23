@@ -38,7 +38,7 @@ type Backend struct {
 	// WebSockets, DB connections).  H&A vnode adjustment is suppressed for
 	// stateful backends to preserve session affinity.  Use the AffinityTable
 	// for routing; only adjust weight via traffic mirroring.
-	Stateful    bool
+	Stateful bool
 }
 
 // VNode is a position on the ring.
@@ -49,13 +49,13 @@ type vnode struct {
 
 // Manager owns the H&A ring and pushes updates to eBPF maps.
 type Manager struct {
-	mu       sync.RWMutex
-	cfg      config.RingConfig
-	log      *zap.Logger
-	backends map[uint32]*Backend // id → backend
-	ring     []vnode             // sorted by pos
-	reqCount int64               // rolling counter for adjust trigger
-	affinity *AffinityTable      // session sticky routing (stateful services)
+	mu        sync.RWMutex
+	cfg       config.RingConfig
+	log       *zap.Logger
+	backends  map[uint32]*Backend  // id → backend
+	ring      []vnode              // sorted by pos
+	reqCount  int64                // rolling counter for adjust trigger
+	affinity  *AffinityTable       // session sticky routing (stateful services)
 	slowStart *SlowStartController // thundering herd protection on recovery
 }
 
@@ -68,10 +68,10 @@ func NewManager(cfg config.RingConfig, log *zap.Logger) (*Manager, error) {
 		cfg.BoundedLoadBeta = betaBounded
 	}
 	return &Manager{
-		cfg:       cfg,
-		log:       log,
-		backends:  make(map[uint32]*Backend),
-		affinity:  NewAffinityTable(0, 0, log), // 30min TTL, 1M sessions
+		cfg:      cfg,
+		log:      log,
+		backends: make(map[uint32]*Backend),
+		affinity: NewAffinityTable(0, 0, log), // 30min TTL, 1M sessions
 		slowStart: newSlowStartController(
 			cfg.SlowStartBatchSize,
 			cfg.SlowStartIntervalS,

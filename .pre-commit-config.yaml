@@ -57,20 +57,19 @@ repos:
         types_or: [python, pyi]
 
   # ── Go: vet + format ─────────────────────────────────────────────────────────
+  # Skipped gracefully when `go` is not installed locally.
   - repo: local
     hooks:
       - id: go-vet
         name: go vet
         language: system
-        entry: bash -c 'cd controlplane && go vet ./...'
+        entry: bash -c 'command -v go >/dev/null 2>&1 || exit 0; cd controlplane && go vet ./...'
         types: [go]
         pass_filenames: false
 
-      - id: gofmt
-        name: gofmt
-        language: system
-        entry: gofmt -l -w
-        types: [go]
+      # gofmt: checked by the dedicated CI step (Check gofmt) using the
+      # project's pinned Go version. Omitted here to avoid version skew
+      # between local gofmt and the version required by go.mod.
 
   # ── Shell scripts: shellcheck ───────────────────────────────────────────────-
   - repo: https://github.com/shellcheck-py/shellcheck-py

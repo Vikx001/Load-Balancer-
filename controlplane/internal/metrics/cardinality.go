@@ -5,32 +5,34 @@
 // include high-cardinality dimensions (backend_ip, path, user_id) the series
 // count explodes exponentially:
 //
-//   10 backends × 200 paths × 50 status codes = 100,000 series
+//	10 backends × 200 paths × 50 status codes = 100,000 series
 //
 // At 15s scrape interval, this is 400k samples/min stored in-process.
 // Prometheus OOMs at ~5M active series on a 16GB node; a single misbehaving
 // label set can get there in minutes.
 //
 // ─── THE FIX ─────────────────────────────────────────────────────────────────
-// 1. Per-dimension cardinality cap: once a dimension (e.g. "path") has seen
-//    maxValues distinct label values, any new value is replaced with "_overflow".
-//    This bounds series count at maxValues×(other dimensions).
 //
-// 2. Label set for per-request metrics:
-//    ALLOWED:  backend_id, service_id, circuit_state_label
-//    DISALLOWED as labels: backend_ip, path, user_id, request_id
-//    → These go into exemplars (sampled traces) or structured logs, not labels.
+//  1. Per-dimension cardinality cap: once a dimension (e.g. "path") has seen
+//     maxValues distinct label values, any new value is replaced with "_overflow".
+//     This bounds series count at maxValues×(other dimensions).
 //
-// 3. Path aggregation: /api/v1/users/123 → /api/v1/users/{id}
-//    Reduces path cardinality from O(user count) to O(route count).
+//  2. Label set for per-request metrics:
+//     ALLOWED:  backend_id, service_id, circuit_state_label
+//     DISALLOWED as labels: backend_ip, path, user_id, request_id
+//     → These go into exemplars (sampled traces) or structured logs, not labels.
+//
+//  3. Path aggregation: /api/v1/users/123 → /api/v1/users/{id}
+//     Reduces path cardinality from O(user count) to O(route count).
 //
 // ─── OPERATIONAL COMMANDS ────────────────────────────────────────────────────
-//   # See current cardinality:
-//   $ curl http://localhost:9090/api/v1/label/__name__/values | jq '.data | length'
-//   # Find high-cardinality series:
-//   $ promtool tsdb analyze /var/lib/prometheus/data --extended
-//   # Drop a bad series without full restart:
-//   $ curl -X DELETE 'http://localhost:9090/api/v1/series?match[]=omega_lb_backend_latency_ms{path=~".+"}'
+//
+//	# See current cardinality:
+//	$ curl http://localhost:9090/api/v1/label/__name__/values | jq '.data | length'
+//	# Find high-cardinality series:
+//	$ promtool tsdb analyze /var/lib/prometheus/data --extended
+//	# Drop a bad series without full restart:
+//	$ curl -X DELETE 'http://localhost:9090/api/v1/series?match[]=omega_lb_backend_latency_ms{path=~".+"}'
 package metrics
 
 import (
@@ -43,10 +45,10 @@ import (
 // CardinalityBudget enforces per-dimension label value caps.
 // It is safe for concurrent use from the telemetry exporter goroutine.
 type CardinalityBudget struct {
-	mu       sync.Mutex
-	counts   map[string]map[string]struct{} // dimension → set of allowed values
-	maxVals  int
-	log      *zap.Logger
+	mu        sync.Mutex
+	counts    map[string]map[string]struct{} // dimension → set of allowed values
+	maxVals   int
+	log       *zap.Logger
 	overflows uint64 // total overflow events (exported as a metric)
 }
 
@@ -117,9 +119,10 @@ func (cb *CardinalityBudget) DimensionSize(dimension string) int {
 
 // pathIDPattern matches numeric or UUID-like path segments.
 // Examples:
-//   /api/v1/users/123         → /api/v1/users/{id}
-//   /api/v1/orders/abc-def    → /api/v1/orders/{id}
-//   /api/v1/orgs/42/items/7   → /api/v1/orgs/{id}/items/{id}
+//
+//	/api/v1/users/123         → /api/v1/users/{id}
+//	/api/v1/orders/abc-def    → /api/v1/orders/{id}
+//	/api/v1/orgs/42/items/7   → /api/v1/orgs/{id}/items/{id}
 var pathIDPattern = regexp.MustCompile(
 	`/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9]+)`,
 )

@@ -5,8 +5,8 @@
 // Each OmegaLB node runs its own control plane and independently manages its eBPF
 // ring.  Without coordination, each node sees different vnode assignments:
 //
-//   Node A: backend-1=90 vnodes, backend-2=60 vnodes
-//   Node B: backend-1=60 vnodes, backend-2=90 vnodes
+//	Node A: backend-1=90 vnodes, backend-2=60 vnodes
+//	Node B: backend-1=60 vnodes, backend-2=90 vnodes
 //
 // This causes permanent asymmetric load even when the cluster is "balanced": each
 // node routes more traffic to a different backend.  The RL agent on Node A and B
@@ -20,25 +20,28 @@
 // Fix: elect one leader (via etcd distributed lock).  The leader writes the
 // canonical ring state to etcd.  All followers watch the key and apply the state.
 // This provides:
-//   • Single-writer consistency for ring mutations
-//   • Monotonic state versioning (only newer snapshots are applied)
-//   • Automatic leader failover (lock expires if leader crashes; TTL-based)
+//   - Single-writer consistency for ring mutations
+//   - Monotonic state versioning (only newer snapshots are applied)
+//   - Automatic leader failover (lock expires if leader crashes; TTL-based)
 //
 // Architecture:
-//   Leader:   ring.Manager → Coordinator.WriteRingState → etcd /omega-lb/ring-state
-//   Follower: etcd /omega-lb/ring-state → Coordinator.applySnapshot → ring.Manager
+//
+//	Leader:   ring.Manager → Coordinator.WriteRingState → etcd /omega-lb/ring-state
+//	Follower: etcd /omega-lb/ring-state → Coordinator.applySnapshot → ring.Manager
 //
 // Requirements:
-//   go get go.etcd.io/etcd/client/v3
-//   (etcd v3 clientv3, minimum etcd server 3.4)
+//
+//	go get go.etcd.io/etcd/client/v3
+//	(etcd v3 clientv3, minimum etcd server 3.4)
 //
 // Operational commands:
-//   # Check which node is leader
-//   $ etcdctl get /omega-lb/leader
-//   # Inspect current ring state
-//   $ etcdctl get /omega-lb/ring-state | python3 -m json.tool
-//   # Force leader re-election (delete the lock)
-//   $ etcdctl del /omega-lb/leader
+//
+//	# Check which node is leader
+//	$ etcdctl get /omega-lb/leader
+//	# Inspect current ring state
+//	$ etcdctl get /omega-lb/ring-state | python3 -m json.tool
+//	# Force leader re-election (delete the lock)
+//	$ etcdctl del /omega-lb/leader
 package consensus
 
 import (
@@ -95,13 +98,13 @@ type WatchEvent struct {
 
 // BackendSnapshot is the serializable representation of one backend.
 type BackendSnapshot struct {
-	ID          uint32 `json:"id"`
+	ID          uint32  `json:"id"`
 	IP          [4]byte `json:"ip"`
-	Port        uint16 `json:"port"`
-	VnodeCount  int    `json:"vnode_count"`
-	CapacityMax int64  `json:"capacity_max"`
-	Health      bool   `json:"health"`
-	Stateful    bool   `json:"stateful"`
+	Port        uint16  `json:"port"`
+	VnodeCount  int     `json:"vnode_count"`
+	CapacityMax int64   `json:"capacity_max"`
+	Health      bool    `json:"health"`
+	Stateful    bool    `json:"stateful"`
 }
 
 // RingStateSnapshot is the canonical ring state written by the leader.
@@ -125,7 +128,7 @@ type Coordinator struct {
 	isLeader    atomic.Bool
 	leaderKey   string
 	stateKey    string
-	lockTTL     int64       // seconds
+	lockTTL     int64        // seconds
 	lastVersion atomic.Int64 // last applied snapshot version; atomic for race-free GetStatus
 }
 

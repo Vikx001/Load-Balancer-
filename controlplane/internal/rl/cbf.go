@@ -16,23 +16,26 @@ import (
 // CBF constraint: dh_i/dt + λ·h_i ≥ 0.
 //
 // QP (solved via OSQP or pure-Go projected gradient):
-//   min ||w - w*||²  s.t.  w ∈ Δ (simplex),  load_i(w) ≤ C_i for all i.
+//
+//	min ||w - w*||²  s.t.  w ∈ Δ (simplex),  load_i(w) ≤ C_i for all i.
 //
 // ─── QP FAILURE RECOVERY (3-tier fallback) ───────────────────────────────────
 // The QP can fail in three ways:
-//   a) Infeasible — constraints are mutually contradictory (server has failed
-//      while still holding active connections; capacity is 0 but load > 0).
-//   b) Numerical instability — gradient diverges; projected gradient returns NaN.
-//   c) Timeout — not applicable here (projected gradient is bounded-iteration),
-//      but relevant for external OSQP solver variants.
+//
+//	a) Infeasible — constraints are mutually contradictory (server has failed
+//	   while still holding active connections; capacity is 0 but load > 0).
+//	b) Numerical instability — gradient diverges; projected gradient returns NaN.
+//	c) Timeout — not applicable here (projected gradient is bounded-iteration),
+//	   but relevant for external OSQP solver variants.
 //
 // Recovery tiers (never let the RL agent act without safety validation):
-//   Tier 1 — single failure: return lastSafeW from the previous successful step.
-//   Tier 2 — three consecutive failures: freeze all RL decisions; the caller
-//             must detect IsFrozen() and fall back to pure H&A ring routing.
-//   Tier 3 — alert: every failure is logged at Error level regardless of tier;
-//             consecutive failures indicate either a constraint formulation bug
-//             or a real capacity emergency that requires operator attention.
+//
+//	Tier 1 — single failure: return lastSafeW from the previous successful step.
+//	Tier 2 — three consecutive failures: freeze all RL decisions; the caller
+//	          must detect IsFrozen() and fall back to pure H&A ring routing.
+//	Tier 3 — alert: every failure is logged at Error level regardless of tier;
+//	          consecutive failures indicate either a constraint formulation bug
+//	          or a real capacity emergency that requires operator attention.
 type CBFProjector struct {
 	lambda float64 // CBF aggressiveness (default 0.5)
 	capPct float64 // capacity fraction cap (default 0.80)

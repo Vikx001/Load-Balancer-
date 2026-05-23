@@ -16,9 +16,9 @@ import (
 	"github.com/omega-lb/omega-lb/internal/health"
 	"github.com/omega-lb/omega-lb/internal/metrics"
 	"github.com/omega-lb/omega-lb/internal/observability"
-	"github.com/omega-lb/omega-lb/internal/rl"
-	"github.com/omega-lb/omega-lb/internal/ring"
 	"github.com/omega-lb/omega-lb/internal/ratelimit"
+	"github.com/omega-lb/omega-lb/internal/ring"
+	"github.com/omega-lb/omega-lb/internal/rl"
 	"github.com/omega-lb/omega-lb/internal/telemetry"
 	"github.com/omega-lb/omega-lb/internal/xds"
 )

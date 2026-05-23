@@ -16,16 +16,16 @@ import (
 
 // BackendEndpoint describes a health check target.
 type BackendEndpoint struct {
-	ID          uint32
-	HealthURL   string // e.g. "http://10.0.0.1:8080/healthz"
-	FailCount   int
+	ID        uint32
+	HealthURL string // e.g. "http://10.0.0.1:8080/healthz"
+	FailCount int
 	// consecutiveSuccesses counts unbroken successful health checks since the last
 	// failure or registration.  Slow-start begins after minSuccessesBeforeRestore
 	// (default 60) consecutive successes following a backend recovery, ensuring
 	// the cache is warm before full traffic is applied.  The counter is reset to
 	// 0 on every failure.
 	consecutiveSuccesses int
-	mu          sync.Mutex
+	mu                   sync.Mutex
 }
 
 // Checker runs active health probes and updates the H&A ring.

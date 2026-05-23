@@ -4,9 +4,9 @@
 // ─── THE PRIVILEGE TRAP ──────────────────────────────────────────────────────
 // Omega-LB's eBPF data plane requires three Linux capabilities:
 //
-//   CAP_BPF      — load eBPF programs and create maps
-//   CAP_NET_ADMIN — attach sock_ops to cgroup, set socket options
-//   CAP_SYS_ADMIN — pin maps to bpffs, access /sys/fs/bpf
+//	CAP_BPF      — load eBPF programs and create maps
+//	CAP_NET_ADMIN — attach sock_ops to cgroup, set socket options
+//	CAP_SYS_ADMIN — pin maps to bpffs, access /sys/fs/bpf
 //
 // In most enterprise Kubernetes clusters, these capabilities are blocked by
 // security policy (PodSecurityAdmission, OPA/Gatekeeper, or legacy PSP).
@@ -19,23 +19,23 @@
 // ring.Manager that drives the eBPF path.
 //
 // ─── WHAT YOU GET IN FALLBACK MODE ───────────────────────────────────────────
-//   • Dynamic NGINX upstream config generated from the H&A ring
-//   • Round-robin and weighted upstreams; hot-reload on backend change
-//   • Health check pass-through to NGINX's active health module
-//   • No CAP_BPF, no CAP_NET_ADMIN, no CAP_SYS_ADMIN required
-//   • Runs as a non-root user (UID 1000) with no hostNetwork
+//   - Dynamic NGINX upstream config generated from the H&A ring
+//   - Round-robin and weighted upstreams; hot-reload on backend change
+//   - Health check pass-through to NGINX's active health module
+//   - No CAP_BPF, no CAP_NET_ADMIN, no CAP_SYS_ADMIN required
+//   - Runs as a non-root user (UID 1000) with no hostNetwork
 //
 // ─── WHAT YOU LOSE IN FALLBACK MODE ─────────────────────────────────────────
-//   • eBPF kernel-level dispatch (~4µs overhead vs ~40ns for eBPF sockops)
-//   • Kernel-side circuit breaker (50ms detection → replaced by 2s health check)
-//   • Per-CPU map metrics (replaced by NGINX access log parsing)
-//   • NUMA-aware ring lookup, Maglev O(1) table
+//   - eBPF kernel-level dispatch (~4µs overhead vs ~40ns for eBPF sockops)
+//   - Kernel-side circuit breaker (50ms detection → replaced by 2s health check)
+//   - Per-CPU map metrics (replaced by NGINX access log parsing)
+//   - NUMA-aware ring lookup, Maglev O(1) table
 //
 // ─── UPGRADE PATH ─────────────────────────────────────────────────────────────
 // When your cluster approves the capabilities (or you move to bare-metal):
-//   1. Set OMEGALB_MODE=ebpf in the DaemonSet env
-//   2. Switch to daemonset-restricted.yaml or daemonset.yaml
-//   3. The ring.Manager state is preserved; no traffic interruption
+//  1. Set OMEGALB_MODE=ebpf in the DaemonSet env
+//  2. Switch to daemonset-restricted.yaml or daemonset.yaml
+//  3. The ring.Manager state is preserved; no traffic interruption
 //
 // ─── HOW NGINX RELOAD WORKS ──────────────────────────────────────────────────
 // NGINX re-reads its config on SIGHUP without dropping connections.  The
@@ -59,9 +59,9 @@ import (
 
 // BackendEntry describes a backend server for NGINX configuration.
 type BackendEntry struct {
-	Address string  // host:port
-	Weight  int     // relative weight (proportional to vnode count)
-	Down    bool    // true = mark as down in NGINX upstream
+	Address string // host:port
+	Weight  int    // relative weight (proportional to vnode count)
+	Down    bool   // true = mark as down in NGINX upstream
 }
 
 // NginxWriter generates NGINX upstream configuration from the ring's backend
@@ -71,8 +71,8 @@ type BackendEntry struct {
 // (e.g. multiple backends recovering simultaneously) into a single reload.
 type NginxWriter struct {
 	mu           sync.Mutex
-	configDir    string      // directory for omega-lb-upstream.conf
-	nginxBin     string      // path to nginx binary (default: "nginx")
+	configDir    string // directory for omega-lb-upstream.conf
+	nginxBin     string // path to nginx binary (default: "nginx")
 	reloadDelay  time.Duration
 	pendingWrite bool
 	log          *zap.Logger
@@ -158,9 +158,9 @@ func (w *NginxWriter) ReloadNginx() error {
 // Returns when ctx is cancelled.
 func (w *NginxWriter) Run(ctx context.Context, updates <-chan []BackendEntry) error {
 	var (
-		pending   []BackendEntry
-		reloadAt  = time.Time{}
-		timer     *time.Timer
+		pending  []BackendEntry
+		reloadAt = time.Time{}
+		timer    *time.Timer
 	)
 
 	flushConfig := func() {
