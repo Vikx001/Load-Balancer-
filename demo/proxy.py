@@ -8,6 +8,7 @@ Uses the ACTUAL system components:
   - Proactive vnode adjustment (30s lookahead)
   - Health checker (active HTTP probes)
 """
+
 import asyncio, aiohttp, aiohttp.web
 import sys, os, ssl, signal, time, math, struct, json, threading
 import ipaddress
@@ -21,30 +22,33 @@ from ml.cbf import CBFProjector as _CBFProjector, SafetyMonitor
 
 # ─── Config loader ─────────────────────────────────────────────────────────────
 
+
 def _load_config() -> dict:
     """Load omega-lb.yaml from repo root (or OMEGA_CONFIG env var path), fall back to sensible defaults."""
     root = os.path.join(os.path.dirname(__file__), "..")
     cfg_path = os.environ.get("OMEGA_CONFIG", os.path.join(root, "omega-lb.yaml"))
     defaults = {
-        "proxy":        {"host": "127.0.0.1", "port": 8080},
-        "backends":     [
+        "proxy": {"host": "127.0.0.1", "port": 8080},
+        "backends": [
             {"host": "127.0.0.1", "port": 9000, "name": "backend-0", "zone": "local-a"},
             {"host": "127.0.0.1", "port": 9001, "name": "backend-1", "zone": "local-b"},
             {"host": "127.0.0.1", "port": 9002, "name": "backend-2", "zone": "local-c"},
             {"host": "127.0.0.1", "port": 9003, "name": "backend-3", "zone": "local-a"},
         ],
-        "kan":          {"model_path": "ml/models/kan_actor.onnx"},
-        "cbf":          {"cap": 0.80, "lambda": 0.5},
-        "rate_limiting":{"initial_rps": 1000, "min_rps": 100, "max_rps": 5000},
+        "kan": {"model_path": "ml/models/kan_actor.onnx"},
+        "cbf": {"cap": 0.80, "lambda": 0.5},
+        "rate_limiting": {"initial_rps": 1000, "min_rps": 100, "max_rps": 5000},
     }
     if not os.path.exists(cfg_path):
         return defaults
     try:
         import yaml  # PyYAML
+
         with open(cfg_path) as f:
             user = yaml.safe_load(f) or {}
     except ImportError:
         import json as _json
+
         # Fall back: try .json config or just use defaults
         json_path = os.path.join(root, "omega-lb.json")
         if os.path.exists(json_path):
@@ -64,26 +68,24 @@ def _load_config() -> dict:
             defaults[k] = v
     return defaults
 
+
 _CFG = _load_config()
 _PROXY_HOST = _CFG["proxy"]["host"]
 _PROXY_PORT = int(_CFG["proxy"]["port"])
-BACKENDS = [
-    (b["host"], int(b["port"]))
-    for b in _CFG["backends"]
-]
+BACKENDS = [(b["host"], int(b["port"])) for b in _CFG["backends"]]
 _BACKEND_NAMES = [b.get("name", f"backend-{i}") for i, b in enumerate(_CFG["backends"])]
-_BACKEND_ZONES = [b.get("zone", "local")        for b in _CFG["backends"]]
+_BACKEND_ZONES = [b.get("zone", "local") for b in _CFG["backends"]]
 N = len(BACKENDS)
 _KAN_MODEL = os.path.join(os.path.dirname(__file__), "..", _CFG["kan"]["model_path"])
-_CBF_CAP   = float(_CFG["cbf"]["cap"])
-_CBF_LAM   = float(_CFG["cbf"].get("lambda", 0.5))
-_INIT_RPS  = float(_CFG["rate_limiting"]["initial_rps"])
-_MIN_RPS   = float(_CFG["rate_limiting"].get("min_rps", 100))
-_MAX_RPS   = float(_CFG["rate_limiting"].get("max_rps", 5000))
+_CBF_CAP = float(_CFG["cbf"]["cap"])
+_CBF_LAM = float(_CFG["cbf"].get("lambda", 0.5))
+_INIT_RPS = float(_CFG["rate_limiting"]["initial_rps"])
+_MIN_RPS = float(_CFG["rate_limiting"].get("min_rps", 100))
+_MAX_RPS = float(_CFG["rate_limiting"].get("max_rps", 5000))
 
 # TLS — optional; only active when cert_file + key_file are set in omega-lb.yaml
-_TLS_CERT  = _CFG.get("tls", {}).get("cert_file")
-_TLS_KEY   = _CFG.get("tls", {}).get("key_file")
+_TLS_CERT = _CFG.get("tls", {}).get("cert_file")
+_TLS_KEY = _CFG.get("tls", {}).get("key_file")
 _TLS_UPSTREAM = _CFG.get("tls", {}).get("upstream_tls", False)  # verify upstream TLS?
 _ADMIN_TOKEN = os.environ.get("OMEGA_ADMIN_TOKEN", _CFG.get("admin", {}).get("token"))
 _ADMIN_ALLOWLIST_RAW = os.environ.get("OMEGA_ADMIN_ALLOWLIST")
@@ -181,8 +183,9 @@ print(f"[proxy] Admin rate limit: {_ADMIN_RATE_LIMIT_PER_MIN}/min per IP")
 
 # ─── MurmurHash3 (matches ring.go) ────────────────────────────────────────────
 
+
 def _murmur3_32(data: bytes, seed: int = 0) -> int:
-    C1, C2 = 0xcc9e2d51, 0x1b873593
+    C1, C2 = 0xCC9E2D51, 0x1B873593
     h = seed & 0xFFFFFFFF
     length = len(data)
     for i in range(0, length - 3, 4):
@@ -192,31 +195,34 @@ def _murmur3_32(data: bytes, seed: int = 0) -> int:
         k = (k * C2) & 0xFFFFFFFF
         h ^= k
         h = ((h << 13) | (h >> 19)) & 0xFFFFFFFF
-        h = (h * 5 + 0xe6546b64) & 0xFFFFFFFF
+        h = (h * 5 + 0xE6546B64) & 0xFFFFFFFF
     tail_len = length & 3
     if tail_len:
-        tail = data[length - tail_len:] + b'\x00' * (4 - tail_len)
+        tail = data[length - tail_len :] + b"\x00" * (4 - tail_len)
         k = struct.unpack_from("<I", tail)[0]
         k = (k * C1) & 0xFFFFFFFF
         k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF
         k = (k * C2) & 0xFFFFFFFF
         h ^= k
     h ^= length
-    h ^= h >> 16; h = (h * 0x85ebca6b) & 0xFFFFFFFF
-    h ^= h >> 13; h = (h * 0xc2b2ae35) & 0xFFFFFFFF
+    h ^= h >> 16
+    h = (h * 0x85EBCA6B) & 0xFFFFFFFF
+    h ^= h >> 13
+    h = (h * 0xC2B2AE35) & 0xFFFFFFFF
     h ^= h >> 16
     return h
 
 
 # ─── H&A Consistent Hash Ring (matches ring.go) ───────────────────────────────
 
+
 class HAring:
     def __init__(self, n_backends: int, vnodes_per: int = 150):
-        self._n       = n_backends
-        self._vnodes  = np.array([float(vnodes_per)] * n_backends)
-        self._health  = [True] * n_backends
-        self._ring    = []   # [(hash_pos, backend_id)]
-        self._lock    = threading.RLock()
+        self._n = n_backends
+        self._vnodes = np.array([float(vnodes_per)] * n_backends)
+        self._health = [True] * n_backends
+        self._ring = []  # [(hash_pos, backend_id)]
+        self._lock = threading.RLock()
         self._rebuild()
 
     def _rebuild(self):
@@ -245,7 +251,7 @@ class HAring:
         with self._lock:
             if not self._ring:
                 return 0
-            h  = _murmur3_32(key.encode())
+            h = _murmur3_32(key.encode())
             lo, hi = 0, len(self._ring)
             while lo < hi:
                 mid = (lo + hi) // 2
@@ -269,18 +275,19 @@ class HAring:
 
 # ─── Token Bucket Rate Limiter ─────────────────────────────────────────────────
 
+
 class TokenBucket:
     def __init__(self, rate: float):
-        self._rate   = rate   # tokens/s
+        self._rate = rate  # tokens/s
         self._tokens = rate
-        self._last   = time.monotonic()
-        self._lock   = threading.Lock()
+        self._last = time.monotonic()
+        self._lock = threading.Lock()
 
     def consume(self) -> bool:
         with self._lock:
-            now  = time.monotonic()
+            now = time.monotonic()
             self._tokens = min(self._rate, self._tokens + self._rate * (now - self._last))
-            self._last   = now
+            self._last = now
             if self._tokens >= 1:
                 self._tokens -= 1
                 return True
@@ -293,20 +300,19 @@ class TokenBucket:
 
 # ─── Health Checker ────────────────────────────────────────────────────────────
 
+
 class HealthChecker:
     FAIL_THRESHOLD = 3
 
     def __init__(self, backends: list[tuple[str, int]], ring: HAring, metrics: MetricsStore):
         self._backends = backends
-        self._ring     = ring
-        self.metrics  = metrics
-        self._fails    = [0] * len(backends)
-        self._session  = None
+        self._ring = ring
+        self.metrics = metrics
+        self._fails = [0] * len(backends)
+        self._session = None
 
     async def start(self):
-        self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=2)
-        )
+        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2))
         asyncio.create_task(self._loop())
 
     async def _loop(self):
@@ -333,9 +339,10 @@ class HealthChecker:
 
 # ─── Proactive Pre-distribution (matches ring.go ProactiveAdjust) ─────────────
 
+
 class ProactiveController:
     def __init__(self, ring: HAring, metrics: MetricsStore):
-        self._ring    = ring
+        self._ring = ring
         self.metrics = metrics
 
     def step(self):
@@ -367,18 +374,20 @@ class ProactiveController:
 
 # ─── DQN Rate Limit Adjuster (simplified online version) ──────────────────────
 
+
 class DQNRateLimitAdjuster:
     """
     Simplified online DQN: adjusts token bucket rates every 100ms.
     Action space: {0: decrease 10%, 1: hold, 2: increase 10%}
     Uses epsilon-greedy with load-informed Q-values.
     """
+
     ACTIONS = [0.90, 1.00, 1.10]
 
     def __init__(self, buckets: list[TokenBucket], metrics: MetricsStore):
         self._buckets = buckets
         self.metrics = metrics
-        self._step    = 0
+        self._step = 0
         self._epsilon = 0.3
 
     def update(self):
@@ -392,11 +401,11 @@ class DQNRateLimitAdjuster:
             load = loads[i]
             # Q-values: prefer decrease when overloaded, increase when underloaded
             if load > 0.80:
-                q = [1.0, 0.2, 0.0]    # decrease preferred
+                q = [1.0, 0.2, 0.0]  # decrease preferred
             elif load > 0.65:
                 q = [0.3, 0.6, 0.1]
             else:
-                q = [0.0, 0.3, 0.7]    # increase preferred
+                q = [0.0, 0.3, 0.7]  # increase preferred
 
             if np.random.random() < self._epsilon:
                 action = np.random.randint(3)
@@ -411,19 +420,18 @@ class DQNRateLimitAdjuster:
 
 # ─── Main Proxy ────────────────────────────────────────────────────────────────
 
+
 class OmegaLBProxy:
     def __init__(self):
-        self.metrics    = MetricsStore(N,
-                                       names=_BACKEND_NAMES,
-                                       zones=_BACKEND_ZONES)
-        self.ring       = HAring(N, vnodes_per=150)
-        self.kan        = KANInference.load(_KAN_MODEL)
-        self.cbf        = SafetyMonitor(n_backends=N, cap=_CBF_CAP, lam=_CBF_LAM)
-        self.buckets    = [TokenBucket(rate=_INIT_RPS) for _ in range(N)]
+        self.metrics = MetricsStore(N, names=_BACKEND_NAMES, zones=_BACKEND_ZONES)
+        self.ring = HAring(N, vnodes_per=150)
+        self.kan = KANInference.load(_KAN_MODEL)
+        self.cbf = SafetyMonitor(n_backends=N, cap=_CBF_CAP, lam=_CBF_LAM)
+        self.buckets = [TokenBucket(rate=_INIT_RPS) for _ in range(N)]
         self.health_chk = HealthChecker(BACKENDS, self.ring, self.metrics)
-        self.proactive  = ProactiveController(self.ring, self.metrics)
-        self.dqn        = DQNRateLimitAdjuster(self.buckets, self.metrics)
-        self._session   = None
+        self.proactive = ProactiveController(self.ring, self.metrics)
+        self.dqn = DQNRateLimitAdjuster(self.buckets, self.metrics)
+        self._session = None
         self._req_count = 0
 
     async def start(self):
@@ -452,8 +460,8 @@ class OmegaLBProxy:
         """500ms control loop: KAN → CBF → ring update → proactive → DQN."""
         while True:
             await asyncio.sleep(0.5)
-            loads  = self.metrics.load_hist[:, -1].copy()
-            lats   = self.metrics.latency_hist[:, -1].copy()
+            loads = self.metrics.load_hist[:, -1].copy()
+            lats = self.metrics.latency_hist[:, -1].copy()
             errors = self.metrics.error_hist[:, -1].copy()
             health = list(self.metrics.health)
 
@@ -462,7 +470,7 @@ class OmegaLBProxy:
 
             # Layer 2: CBF safety projection
             weights, cbf_active = self.cbf.step(weights, loads)
-            self.metrics.cbf_active  = cbf_active
+            self.metrics.cbf_active = cbf_active
             self.metrics.kan_weights = weights
 
             # Apply weights to ring (vnode counts)
@@ -486,13 +494,9 @@ class OmegaLBProxy:
 
         # Rate limit check
         if not self.buckets[backend_id].consume():
-            return aiohttp.web.Response(
-                status=429,
-                text=json.dumps({"error": "rate_limited", "backend": backend_id})
-            )
+            return aiohttp.web.Response(status=429, text=json.dumps({"error": "rate_limited", "backend": backend_id}))
 
-        headers = {k: v for k, v in request.headers.items()
-                   if k.lower() not in ("host", "content-length")}
+        headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length")}
         body = await request.read()
 
         allow_retry = (not _RETRY_IDEMPOTENT_ONLY) or (request.method.upper() in _IDEMPOTENT_METHODS)
@@ -507,15 +511,15 @@ class OmegaLBProxy:
             t_start = time.monotonic()
             try:
                 async with self._session.request(
-                    request.method, url,
+                    request.method,
+                    url,
                     headers=headers,
                     data=body or None,
                 ) as resp:
                     latency_ms = (time.monotonic() - t_start) * 1000
-                    resp_body  = await resp.read()
-                    is_error   = resp.status >= 500
-                    self.metrics.record_request_end(backend_id, latency_ms, is_error,
-                                                      len(resp_body))
+                    resp_body = await resp.read()
+                    is_error = resp.status >= 500
+                    self.metrics.record_request_end(backend_id, latency_ms, is_error, len(resp_body))
                     if is_error and attempt == 0:
                         # Try a different healthy backend
                         alt = self._next_healthy(tried)
@@ -525,16 +529,15 @@ class OmegaLBProxy:
                             continue
 
                     resp_headers = {
-                        "X-Omega-Backend":    str(backend_id),
+                        "X-Omega-Backend": str(backend_id),
                         "X-Omega-Latency-Ms": f"{latency_ms:.1f}",
-                        "X-Omega-Ring-Pos":   f"{self.ring.vnode_counts()[backend_id]:.0f}v",
-                        "X-Omega-Attempts":   str(attempt + 1),
+                        "X-Omega-Ring-Pos": f"{self.ring.vnode_counts()[backend_id]:.0f}v",
+                        "X-Omega-Attempts": str(attempt + 1),
                     }
                     safe_headers = {}
                     for k, v in resp.headers.items():
                         kl = k.lower()
-                        if kl not in ("content-encoding", "transfer-encoding",
-                                      "content-length", "connection"):
+                        if kl not in ("content-encoding", "transfer-encoding", "content-length", "connection"):
                             safe_headers[k] = v
                     safe_headers.update(resp_headers)
                     return aiohttp.web.Response(
@@ -551,17 +554,11 @@ class OmegaLBProxy:
                         tried.add(alt)
                         backend_id = alt
                         continue
-                return aiohttp.web.Response(
-                    status=502,
-                    text=json.dumps({"error": str(e), "backend": backend_id})
-                )
+                return aiohttp.web.Response(status=502, text=json.dumps({"error": str(e), "backend": backend_id}))
             except Exception as e:
                 latency_ms = (time.monotonic() - t_start) * 1000
                 self.metrics.record_request_end(backend_id, latency_ms, True)
-                return aiohttp.web.Response(
-                    status=502,
-                    text=json.dumps({"error": str(e), "backend": backend_id})
-                )
+                return aiohttp.web.Response(status=502, text=json.dumps({"error": str(e), "backend": backend_id}))
         # Should not reach here
         return aiohttp.web.Response(status=502, text='{"error":"all retries exhausted"}')
 
@@ -583,10 +580,7 @@ class OmegaLBProxy:
         )
         snap["kan_stats"] = self.kan.stats.to_dict()
         snap["cbf_audit"] = self.cbf.audit()
-        return aiohttp.web.Response(
-            text=json.dumps(snap, indent=2),
-            content_type="application/json"
-        )
+        return aiohttp.web.Response(text=json.dumps(snap, indent=2), content_type="application/json")
 
     async def handle_admin(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
         """Control endpoint for the dashboard fault-injection controls."""
@@ -619,8 +613,7 @@ class OmegaLBProxy:
                 # Tell the backend to simulate overload
                 host, port = BACKENDS[i]
                 async with self._session.post(
-                    f"http://{host}:{port}/_admin",
-                    json={"overload": True, "error_pct": 90}
+                    f"http://{host}:{port}/_admin", json={"overload": True, "error_pct": 90}
                 ) as _:
                     pass
 
@@ -630,8 +623,7 @@ class OmegaLBProxy:
                 self.metrics.health[i] = True
                 host, port = BACKENDS[i]
                 async with self._session.post(
-                    f"http://{host}:{port}/_admin",
-                    json={"overload": False, "error_pct": 0.3}
+                    f"http://{host}:{port}/_admin", json={"overload": False, "error_pct": 0.3}
                 ) as _:
                     pass
 
@@ -640,10 +632,7 @@ class OmegaLBProxy:
                 with open(os.path.join(os.path.dirname(__file__), "spike.flag"), "w") as f:
                     f.write("1" if data["spike"] else "0")
 
-            return aiohttp.web.Response(
-                text="ok",
-                headers={"X-Omega-Admin-RateLimit-Remaining": str(remaining)}
-            )
+            return aiohttp.web.Response(text="ok", headers={"X-Omega-Admin-RateLimit-Remaining": str(remaining)})
         except Exception as e:
             client_ip = _client_ip_from_request(request)
             _audit_admin_block(400, f"bad_request:{type(e).__name__}", client_ip)
@@ -656,7 +645,7 @@ async def run_proxy():
 
     app = aiohttp.web.Application()
     app.router.add_route("*", "/_omega/status", proxy.handle_status)
-    app.router.add_post( "/_omega/admin",        proxy.handle_admin)
+    app.router.add_post("/_omega/admin", proxy.handle_admin)
     app.router.add_route("*", "/{path_info:.*}", proxy.handle)
 
     runner = aiohttp.web.AppRunner(app)

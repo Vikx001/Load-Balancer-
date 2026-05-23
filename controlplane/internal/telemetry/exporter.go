@@ -101,4 +101,3 @@ func (e *Exporter) export() {
 		_ = overflows // used in real OTLP path
 	}
 }
-

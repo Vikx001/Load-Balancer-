@@ -14,7 +14,7 @@
 #   # Watch what the agent WOULD have done
 #   curl -s http://your-lb:9000/admin/mode | jq .
 #   # → {"mode":"ASSISTED","model_version":"v1.0.0","effective_at":"..."}
-#   
+#
 #   # Compare agent's preferred backends against actual routing outcomes
 #   # in the flight recorder:
 #   curl -s "http://your-lb:9000/admin/explain/recent?n=100" | \

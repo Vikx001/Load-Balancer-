@@ -12,6 +12,7 @@ Covers:
 
 Reference: Google Testing Blog — "Test Sizes" (unit = in-process, fast, no I/O)
 """
+
 import sys
 import os
 import time
@@ -29,9 +30,11 @@ sys.path.insert(0, REPO_ROOT)
 # demo/proxy.py has top-level side-effects (prints, loads config).  We isolate
 # just the classes we need rather than importing the whole module.
 
+
 def _import_proxy():
     """Import proxy module with config side-effects suppressed."""
     import io, contextlib
+
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         import demo.proxy as _proxy
@@ -47,6 +50,7 @@ def proxy_mod():
 # 1. MurmurHash3
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestMurmur3:
     """Verify the Python MurmurHash3 is bit-for-bit compatible with the Go ring."""
 
@@ -57,7 +61,7 @@ class TestMurmur3:
     def test_known_vectors(self, proxy_mod):
         """Hand-checked against Go's murmur3.Sum32 (smhasher test vectors)."""
         vectors = [
-            (b"0#0",   proxy_mod._murmur3_32(b"0#0")),   # just determinism
+            (b"0#0", proxy_mod._murmur3_32(b"0#0")),  # just determinism
             (b"hello", proxy_mod._murmur3_32(b"hello")),
             (b"omega-lb-key", proxy_mod._murmur3_32(b"omega-lb-key")),
         ]
@@ -67,8 +71,7 @@ class TestMurmur3:
     def test_deterministic(self, proxy_mod):
         """Same input always produces same output."""
         for _ in range(100):
-            assert proxy_mod._murmur3_32(b"test-key-123") == \
-                   proxy_mod._murmur3_32(b"test-key-123")
+            assert proxy_mod._murmur3_32(b"test-key-123") == proxy_mod._murmur3_32(b"test-key-123")
 
     def test_avalanche(self, proxy_mod):
         """Single-bit change should flip ~50% of output bits (avalanche effect)."""
@@ -88,12 +91,12 @@ class TestMurmur3:
 # 2. H&A Consistent Hash Ring
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestHAring:
 
+class TestHAring:
     @pytest.fixture(autouse=True)
     def ring(self, proxy_mod):
         self.HAring = proxy_mod.HAring
-        self.ring4  = proxy_mod.HAring(n_backends=4, vnodes_per=150)
+        self.ring4 = proxy_mod.HAring(n_backends=4, vnodes_per=150)
 
     # ── Determinism ───────────────────────────────────────────────────────────
 
@@ -131,26 +134,24 @@ class TestHAring:
     def test_more_vnodes_means_more_traffic(self):
         """Doubling backend-0's vnodes should roughly double its share."""
         ring = self.HAring(n_backends=2, vnodes_per=100)
-        ring.set_vnodes(0, 200)   # 2× more vnodes
+        ring.set_vnodes(0, 200)  # 2× more vnodes
 
         counts = [0, 0]
         for i in range(10_000):
             counts[ring.route(f"k:{i}")] += 1
 
         ratio = counts[0] / max(counts[1], 1)
-        assert ratio > 1.3, (
-            f"Vnode adjustment had no effect: backend-0 share={counts[0]/10000:.2%}"
-        )
+        assert ratio > 1.3, f"Vnode adjustment had no effect: backend-0 share={counts[0]/10000:.2%}"
 
     # ── Health / failover ────────────────────────────────────────────────────
 
     def test_unhealthy_backend_never_selected(self):
         """Marking a backend unhealthy must remove it from routing."""
-        self.ring4.set_health(2, False)   # take backend-2 offline
+        self.ring4.set_health(2, False)  # take backend-2 offline
         for i in range(1_000):
             b = self.ring4.route(f"probe:{i}")
             assert b != 2, f"Unhealthy backend-2 was selected for key probe:{i}"
-        self.ring4.set_health(2, True)   # restore
+        self.ring4.set_health(2, True)  # restore
 
     def test_single_healthy_backend_absorbs_all(self):
         """If only one backend is healthy, every key must route to it."""
@@ -194,8 +195,8 @@ class TestHAring:
 # 3. Token Bucket Rate Limiter
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestTokenBucket:
 
+class TestTokenBucket:
     @pytest.fixture(autouse=True)
     def bucket(self, proxy_mod):
         self.TokenBucket = proxy_mod.TokenBucket
@@ -223,8 +224,8 @@ class TestTokenBucket:
 
     def test_rate_zero_ish_denies_after_drain(self):
         """Very low rate bucket should start refusing quickly."""
-        tb = self.TokenBucket(rate=1)   # 1 token/s
-        tb.consume()                     # take the one token
+        tb = self.TokenBucket(rate=1)  # 1 token/s
+        tb.consume()  # take the one token
         # Should be denied now (tokens = 0)
         # Allow a small fill window (≤10ms) before asserting
         denied = 0
@@ -242,15 +243,13 @@ class TestTokenBucket:
             tb.consume()
         time.sleep(0.1)
         refilled = sum(1 for _ in range(60) if tb.consume())
-        assert refilled >= 30, (
-            f"set_rate(500) should give ~50 tokens in 100ms, got {refilled}"
-        )
+        assert refilled >= 30, f"set_rate(500) should give ~50 tokens in 100ms, got {refilled}"
 
     def test_minimum_rate_floor(self):
         """set_rate() below minimum must be clamped, not crash."""
         tb = self.TokenBucket(rate=100)
-        tb.set_rate(0)      # should clamp to 10
-        tb.set_rate(-999)   # should clamp to 10
+        tb.set_rate(0)  # should clamp to 10
+        tb.set_rate(-999)  # should clamp to 10
         assert tb.consume() or not tb.consume()  # no exception = pass
 
 
@@ -258,19 +257,20 @@ class TestTokenBucket:
 # 4. CBF Projector (via ml.cbf)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestCBFProjector:
 
+class TestCBFProjector:
     @pytest.fixture(autouse=True)
     def cbf(self):
         from ml.cbf import CBFProjector
+
         self.CBFProjector = CBFProjector
         self.cap = 0.80
 
     def test_unconstrained_weights_unchanged(self):
         """When no backend exceeds the cap, weights should pass through."""
         cbf = self.CBFProjector(cap=self.cap)
-        w_in  = np.array([0.25, 0.25, 0.25, 0.25])
-        loads = np.array([0.5,  0.5,  0.5,  0.5])
+        w_in = np.array([0.25, 0.25, 0.25, 0.25])
+        loads = np.array([0.5, 0.5, 0.5, 0.5])
         w_out, fired = cbf.project(w_in, loads)
         np.testing.assert_allclose(w_out.sum(), 1.0, atol=1e-6)
         assert (w_out >= 0).all()
@@ -279,7 +279,7 @@ class TestCBFProjector:
 
     def test_overloaded_backend_weight_reduced(self):
         """CBF must reduce weight on a backend whose load exceeds the cap."""
-        cbf  = self.CBFProjector(cap=self.cap)
+        cbf = self.CBFProjector(cap=self.cap)
         w_in = np.array([0.70, 0.10, 0.10, 0.10])
         # backend-0 is at 95% — over the 80% cap
         loads = np.array([0.95, 0.3, 0.2, 0.1])
@@ -295,19 +295,18 @@ class TestCBFProjector:
         cbf = self.CBFProjector(cap=self.cap)
         rng = np.random.default_rng(42)
         for _ in range(200):
-            w_in  = rng.dirichlet(np.ones(4))   # random probability vector
+            w_in = rng.dirichlet(np.ones(4))  # random probability vector
             loads = rng.uniform(0, 1, 4)
             w_out, _ = cbf.project(w_in, loads)
             np.testing.assert_allclose(
-                w_out.sum(), 1.0, atol=1e-6,
-                err_msg=f"Sum != 1 for w_in={w_in.round(3)}, loads={loads.round(3)}"
+                w_out.sum(), 1.0, atol=1e-6, err_msg=f"Sum != 1 for w_in={w_in.round(3)}, loads={loads.round(3)}"
             )
             assert (w_out >= -1e-9).all(), f"Negative weight for loads={loads.round(3)}"
 
     def test_all_overloaded_still_valid(self):
         """Even if all backends exceed the cap, output must be a valid simplex."""
-        cbf   = self.CBFProjector(cap=self.cap)
-        w_in  = np.array([0.25, 0.25, 0.25, 0.25])
+        cbf = self.CBFProjector(cap=self.cap)
+        w_in = np.array([0.25, 0.25, 0.25, 0.25])
         loads = np.array([0.95, 0.92, 0.91, 0.93])
         w_out, fired = cbf.project(w_in, loads)
         np.testing.assert_allclose(w_out.sum(), 1.0, atol=1e-6)
@@ -318,8 +317,8 @@ class TestCBFProjector:
         tight_cbf = self.CBFProjector(cap=0.50)
         loose_cbf = self.CBFProjector(cap=0.90)
 
-        w_in  = np.array([0.40, 0.20, 0.20, 0.20])
-        loads = np.array([0.75, 0.3,  0.3,  0.3])  # backend-0 at 75%
+        w_in = np.array([0.40, 0.20, 0.20, 0.20])
+        loads = np.array([0.75, 0.3, 0.3, 0.3])  # backend-0 at 75%
 
         _, tight_fired = tight_cbf.project(w_in, loads)
         _, loose_fired = loose_cbf.project(w_in, loads)
@@ -333,6 +332,7 @@ class TestCBFProjector:
 # 5. Ring + CBF integration (no I/O)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestRingCBFIntegration:
     """Simulate the proxy's routing decision loop end-to-end (no network)."""
 
@@ -341,7 +341,7 @@ class TestRingCBFIntegration:
         from ml.cbf import CBFProjector
 
         ring = proxy_mod.HAring(n_backends=4, vnodes_per=150)
-        cbf  = CBFProjector(cap=0.80)
+        cbf = CBFProjector(cap=0.80)
 
         # Simulate 500 routing decisions with running load counters
         counts = [0, 0, 0, 0]

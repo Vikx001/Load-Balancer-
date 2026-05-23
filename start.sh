@@ -4,7 +4,7 @@
 # Usage: ./start.sh [--port 8080] [--dashboard-port 8501]
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 PROXY_PORT=8080
 DASH_PORT=8501
@@ -60,7 +60,7 @@ echo "  Stop:      Ctrl+C"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-trap "echo; echo '[omega-lb] Shutting down...'; kill $PROXY_PID 2>/dev/null || true; exit 0" INT TERM
+trap 'echo; echo "[omega-lb] Shutting down..."; kill "$PROXY_PID" 2>/dev/null || true; exit 0' INT TERM
 
 .venv/bin/streamlit run dashboard/app.py \
   --server.port "$DASH_PORT" \

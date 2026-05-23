@@ -322,4 +322,3 @@ func (d *Daemon) runProactiveLoop(ctx context.Context) error {
 		}
 	}
 }
-

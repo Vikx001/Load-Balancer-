@@ -483,4 +483,3 @@ func openPinnedCollection(pinPath string, log *zap.Logger) (*ebpf.Collection, er
 	}
 	return coll, nil
 }
-

@@ -40,6 +40,7 @@ import numpy as np
 # Stats tracking
 # ---------------------------------------------------------------------------
 
+
 class KANStats:
     """Runtime statistics for the KAN inference engine."""
 
@@ -59,9 +60,7 @@ class KANStats:
             self.symbolic_count += 1
         if error:
             self.error_count += 1
-        self._mean_latency_ms = (
-            self._alpha * latency_ms + (1 - self._alpha) * self._mean_latency_ms
-        )
+        self._mean_latency_ms = self._alpha * latency_ms + (1 - self._alpha) * self._mean_latency_ms
 
     @property
     def mean_latency_ms(self) -> float:
@@ -81,6 +80,7 @@ class KANStats:
 # ---------------------------------------------------------------------------
 # KANInference
 # ---------------------------------------------------------------------------
+
 
 class KANInference:
     """
@@ -128,21 +128,16 @@ class KANInference:
         """
         p = Path(model_path)
         if not p.exists():
-            return cls._make_symbolic(
-                reason=f"model not found at {p}, using symbolic fallback"
-            )
+            return cls._make_symbolic(reason=f"model not found at {p}, using symbolic fallback")
         try:
             import onnxruntime as ort  # soft dependency
-            sess = ort.InferenceSession(
-                str(p), providers=["CPUExecutionProvider"]
-            )
+
+            sess = ort.InferenceSession(str(p), providers=["CPUExecutionProvider"])
             obj = cls(onnx_session=sess)
             print(f"[KAN] Loaded ONNX model from {p}")
             return obj
         except Exception as exc:
-            return cls._make_symbolic(
-                reason=f"ONNX load failed ({exc}), using symbolic fallback"
-            )
+            return cls._make_symbolic(reason=f"ONNX load failed ({exc}), using symbolic fallback")
 
     @classmethod
     def symbolic(cls) -> "KANInference":
@@ -190,9 +185,7 @@ class KANInference:
             except Exception as exc:
                 # Graceful degradation: ONNX blew up, use symbolic
                 w = self._infer_symbolic(cpu, lat_ms, err, health)
-                self.stats.record(
-                    "symbolic", (time.monotonic() - t0) * 1000, error=True
-                )
+                self.stats.record("symbolic", (time.monotonic() - t0) * 1000, error=True)
                 print(f"[KAN] ONNX inference error ({exc}), fell back to symbolic")
                 return w
 
@@ -223,10 +216,7 @@ class KANInference:
         for i in range(n):
             raw = max(
                 0.0,
-                1.0
-                - cpu_c * float(cpu[i])
-                - lat_c * float(lat_ms[i]) / 1000.0
-                - err_c * float(err[i]),
+                1.0 - cpu_c * float(cpu[i]) - lat_c * float(lat_ms[i]) / 1000.0 - err_c * float(err[i]),
             ) * float(h[i])
             eqs.append(
                 f"w_{i} = max(0, 1 "
@@ -258,10 +248,9 @@ class KANInference:
         """
         try:
             import onnxruntime as ort
+
             p = Path(model_path)
-            new_sess = ort.InferenceSession(
-                str(p), providers=["CPUExecutionProvider"]
-            )
+            new_sess = ort.InferenceSession(str(p), providers=["CPUExecutionProvider"])
             with self._lock:
                 self._session = new_sess
             print(f"[KAN] Hot-reloaded model from {p}")
@@ -303,13 +292,16 @@ class KANInference:
         health: list[bool],
     ) -> np.ndarray:
         h = np.array([1.0 if v else 0.0 for v in health], dtype=np.float64)
-        raw = np.maximum(
-            0.0,
-            1.0
-            - self._CPU_COEFF * np.asarray(cpu, dtype=np.float64)
-            - self._LAT_COEFF * np.asarray(lat_ms, dtype=np.float64) / 1000.0
-            - self._ERR_COEFF * np.asarray(err, dtype=np.float64),
-        ) * h
+        raw = (
+            np.maximum(
+                0.0,
+                1.0
+                - self._CPU_COEFF * np.asarray(cpu, dtype=np.float64)
+                - self._LAT_COEFF * np.asarray(lat_ms, dtype=np.float64) / 1000.0
+                - self._ERR_COEFF * np.asarray(err, dtype=np.float64),
+            )
+            * h
+        )
         total = raw.sum()
         if total < 1e-9:
             # All backends saturated or all unhealthy — circuit-breaker fallback.
@@ -341,20 +333,22 @@ class KANInference:
         for i in range(n):
             lat_s = float(lat_ms[i]) / 1000.0
             queue_est = max(0.0, float(cpu[i]) - 0.5) * 100.0
-            per_backend.extend([
-                float(cpu[i]),                              # cpu_utilisation
-                float(cpu[i]) * 1000.0,                    # active_connections (approx)
-                queue_est,                                  # queue_depth
-                float(lat_ms[i]),                           # ewma_latency_ms
-                float(cpu[i]) * 1024.0 * 100.0,            # tx_bytes_per_sec
-                float(cpu[i]) * 512.0 * 100.0,             # rx_bytes_per_sec
-                float(h[i]),                                # health_status
-                float(err[i]),                              # error_rate_1m
-            ])
+            per_backend.extend(
+                [
+                    float(cpu[i]),  # cpu_utilisation
+                    float(cpu[i]) * 1000.0,  # active_connections (approx)
+                    queue_est,  # queue_depth
+                    float(lat_ms[i]),  # ewma_latency_ms
+                    float(cpu[i]) * 1024.0 * 100.0,  # tx_bytes_per_sec
+                    float(cpu[i]) * 512.0 * 100.0,  # rx_bytes_per_sec
+                    float(h[i]),  # health_status
+                    float(err[i]),  # error_rate_1m
+                ]
+            )
         t = time.monotonic() % (2 * np.pi)
         global_feats = [
-            float(np.sum(cpu)) * 1000.0,   # total_rps proxy
-            float(np.max(lat_ms)),          # p99 proxy
+            float(np.sum(cpu)) * 1000.0,  # total_rps proxy
+            float(np.max(lat_ms)),  # p99 proxy
             float(np.sin(t)),
             float(np.cos(t)),
         ]

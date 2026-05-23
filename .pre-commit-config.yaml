@@ -1,37 +1,3 @@
-repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
-
-  - repo: local
-    hooks:
-      - id: black
-        name: black (format)
-        entry: black --line-length 100 .
-        language: system
-        types: [python]
-
-      - id: isort
-        name: isort (imports)
-        entry: isort .
-        language: system
-        types: [python]
-
-      - id: ruff
-        name: ruff (lint)
-        entry: ruff check --fix .
-        language: system
-        types: [python]
-
-      - id: gofmt
-        name: gofmt (format)
-        entry: sh -c "gofmt -s -w $(git ls-files '*.go')"
-        language: system
-        files: \.go$
 # ────────────────────────────────────────────────────────────────────────────
 # Omega-LB — pre-commit hooks
 #
@@ -106,7 +72,7 @@ repos:
         entry: gofmt -l -w
         types: [go]
 
-  # ── Shell scripts: shellcheck ────────────────────────────────────────────────
+  # ── Shell scripts: shellcheck ───────────────────────────────────────────────-
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:

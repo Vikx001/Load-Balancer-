@@ -210,9 +210,7 @@ class OmegaDesktop(QMainWindow):
         wiring_layout.addWidget(wiring_help)
 
         self.wiring_table = QTableWidget(0, 7)
-        self.wiring_table.setHorizontalHeaderLabels(
-            ["Name", "Host", "Port", "Zone", "Health", "Latency ms", "Test"]
-        )
+        self.wiring_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Zone", "Health", "Latency ms", "Test"])
         self.wiring_table.verticalHeader().setVisible(False)
         self.wiring_table.horizontalHeader().setStretchLastSection(True)
         self.wiring_table.setAlternatingRowColors(True)
@@ -343,10 +341,10 @@ class OmegaDesktop(QMainWindow):
             port_item = self.wiring_table.item(r, 2)
             zone_item = self.wiring_table.item(r, 3)
 
-            name = (name_item.text().strip() if name_item else f"backend-{r}")
-            host = (host_item.text().strip() if host_item else "")
-            port_txt = (port_item.text().strip() if port_item else "")
-            zone = (zone_item.text().strip() if zone_item else "local")
+            name = name_item.text().strip() if name_item else f"backend-{r}"
+            host = host_item.text().strip() if host_item else ""
+            port_txt = port_item.text().strip() if port_item else ""
+            zone = zone_item.text().strip() if zone_item else "local"
 
             if not host:
                 raise ValueError(f"Backend row {r+1}: host is required")

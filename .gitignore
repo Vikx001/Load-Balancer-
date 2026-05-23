@@ -68,3 +68,4 @@ docs/graphify/graph.json
 docs/graphify/manifest.json
 docs/graphify/cache/
 docs/graphify/.graphify_*
+releases/*.zip
