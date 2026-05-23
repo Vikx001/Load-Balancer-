@@ -105,6 +105,35 @@ make fmt-go            # format Go files in-place
 
 CI will also run the same checks on PRs via `.github/workflows/lint.yml`.
 
+Per-module Graphify and local viewer
+-----------------------------------
+
+For focused reviews or very large refactors you can build a per-module AST graph:
+
+```bash
+make docs-graph-module MODULE=controlplane/internal/health
+# output: docs/graphify/GRAPH_REPORT-controlplane-internal-health.md
+```
+
+To explore the produced graph interactively, run the lightweight local viewer:
+
+```bash
+make graph-view
+# then open http://localhost:8001/docs/graphify/viewer.html
+```
+
+Token-savings benchmark
+------------------------
+
+Use the included benchmark to estimate token savings for representative queries:
+
+```bash
+python tools/graphify_bench.py
+```
+
+The benchmark is approximation-based and uses a simple chars->tokens heuristic; it is intended as a reproducible project-level comparator rather than an absolute oracle.
+
+
 
 The graph is regenerated automatically whenever you run `make docs-graph`. It takes about 30–60 seconds for the full repository. Run it again after large refactors.
 

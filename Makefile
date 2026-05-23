@@ -229,6 +229,22 @@ docs-graph: ## Regenerate local AST graph (graphify-out/) and update docs/graphi
 	@echo "  [docs] graph ready at graphify-out/graph.json"
 	@echo "  [docs] report committed to docs/graphify/GRAPH_REPORT.md"
 
+docs-graph-module: ## Regenerate an AST-only graph for a specific module path (use MODULE=path/to/pkg)
+	@if [ -z "$(MODULE)" ]; then echo "Usage: make docs-graph-module MODULE=path/to/dir" && exit 1; fi
+	@echo "  [docs] generating module AST-only graph for $(MODULE) into graphify-out/ (no LLM)"
+	@[ -d .venv-graphify ] || python3 -m venv .venv-graphify
+	.venv-graphify/bin/pip install -q --upgrade graphifyy
+	.venv-graphify/bin/graphify update $(MODULE) --no-cluster
+	@mkdir -p docs/graphify
+	@sanitized=$$(echo $(MODULE) | sed -e 's/[\// ]/-/g' -e 's/[^A-Za-z0-9._-]/-/g') && \
+		 cp graphify-out/GRAPH_REPORT.md docs/graphify/GRAPH_REPORT-$$sanitized.md && \
+		 cp graphify-out/graph.json docs/graphify/graph-$$sanitized.json
+	@echo "  [docs] module graph ready at docs/graphify/GRAPH_REPORT-$$sanitized.md"
+
+graph-view: ## Serve repository over HTTP for local graph viewer at http://localhost:8001/docs/graphify/viewer.html
+	@echo "  [view] serving repo root on http://localhost:8001 — open docs/graphify/viewer.html"
+	@python3 -m http.server 8001
+
 .PHONY: dev-setup precommit-install precommit-check fmt-go
 
 dev-setup: ## Create Python venv and install developer tooling (pre-commit, black, ruff, isort)

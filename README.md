@@ -115,6 +115,32 @@ make docs-graph
 ANTHROPIC_API_KEY=sk-... python tools/check_claude_key.py
 ```
 
+Graphify utilities
+------------------
+
+Create a per-module graph (useful for scoped reviews):
+
+```bash
+# Example: generate a graph for the health subsystem
+make docs-graph-module MODULE=controlplane/internal/health
+
+# The report will be written to docs/graphify/GRAPH_REPORT-controlplane-internal-health.md
+```
+
+Run the lightweight viewer locally (opens a simple search UI served from the repo root):
+
+```bash
+make graph-view      # serves http://localhost:8001 — open /docs/graphify/viewer.html
+```
+
+Run the token-savings benchmark (requires graphify-out/graph.json):
+
+```bash
+python tools/graphify_bench.py
+# or supply a file with custom queries
+python tools/graphify_bench.py --queries my_queries.txt
+```
+
 ---
 
 ### The Five Routing Layers
