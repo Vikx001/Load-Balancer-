@@ -42,7 +42,7 @@ jobs:
       - name: Check gofmt
         run: |
           set -e
-          FILES=$(gofmt -l ./controlplane)
+          FILES=$(find controlplane -name '*.go' -print0 | xargs -0 -r gofmt -l)
           if [ -n "$FILES" ]; then
             echo "gofmt found files that require formatting:"
             echo "$FILES"
