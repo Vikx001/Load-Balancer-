@@ -67,11 +67,9 @@ repos:
         types: [go]
         pass_filenames: false
 
-      - id: gofmt
-        name: gofmt
-        language: system
-        entry: bash -c 'command -v gofmt >/dev/null 2>&1 || exit 0; out=$(gofmt -l "$@"); if [ -n "$out" ]; then echo "Run gofmt on:"; echo "$out"; exit 1; fi' --
-        types: [go]
+      # gofmt: checked by the dedicated CI step (Check gofmt) using the
+      # project's pinned Go version. Omitted here to avoid version skew
+      # between local gofmt and the version required by go.mod.
 
   # ── Shell scripts: shellcheck ───────────────────────────────────────────────-
   - repo: https://github.com/shellcheck-py/shellcheck-py
