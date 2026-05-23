@@ -57,19 +57,20 @@ repos:
         types_or: [python, pyi]
 
   # ── Go: vet + format ─────────────────────────────────────────────────────────
+  # Skipped gracefully when `go` is not installed locally.
   - repo: local
     hooks:
       - id: go-vet
         name: go vet
         language: system
-        entry: bash -c 'cd controlplane && go vet ./...'
+        entry: bash -c 'command -v go >/dev/null 2>&1 || exit 0; cd controlplane && go vet ./...'
         types: [go]
         pass_filenames: false
 
       - id: gofmt
         name: gofmt
         language: system
-        entry: gofmt -l -w
+        entry: bash -c 'command -v gofmt >/dev/null 2>&1 || exit 0; gofmt -l -w "$@"' --
         types: [go]
 
   # ── Shell scripts: shellcheck ───────────────────────────────────────────────-
