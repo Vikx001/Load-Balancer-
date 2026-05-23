@@ -17,9 +17,9 @@ import (
 
 // Server is the gRPC xDS management server.
 type Server struct {
-	cfg    config.XDSConfig
-	log    *zap.Logger
-	ring   *ring.Manager
+	cfg     config.XDSConfig
+	log     *zap.Logger
+	ring    *ring.Manager
 	grpcSrv *grpc.Server
 }
 

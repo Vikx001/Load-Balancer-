@@ -5,25 +5,27 @@
 // distribution shift, or simply a bad hyperparameter run) can cause cascading
 // failures within seconds of deployment:
 //
-//   New model pushes 80% weight to backend-3
-//   → backend-3 saturates in ~10s at 50k RPS
-//   → 5xx rate spikes; circuit breaker trips
-//   → CBF projects weights away from backend-3
-//   → weight bounces to backend-1; backend-1 saturates
-//   → cascade failure; SRE wakes at 3am
+//	New model pushes 80% weight to backend-3
+//	→ backend-3 saturates in ~10s at 50k RPS
+//	→ 5xx rate spikes; circuit breaker trips
+//	→ CBF projects weights away from backend-3
+//	→ weight bounces to backend-1; backend-1 saturates
+//	→ cascade failure; SRE wakes at 3am
 //
 // Without versioning and rollback, recovery requires:
-//   1. Diagnose the model is bad (5-10 minutes)
-//   2. Retrain from last checkpoint (30 min - 2 hours)
-//   3. Deploy manually (5-10 minutes)
+//  1. Diagnose the model is bad (5-10 minutes)
+//  2. Retrain from last checkpoint (30 min - 2 hours)
+//  3. Deploy manually (5-10 minutes)
 //
 // With versioning and hot-reload, recovery is:
-//   $ omegalb model rollback --to=v1.3.1    # < 5 seconds, zero restart
+//
+//	$ omegalb model rollback --to=v1.3.1    # < 5 seconds, zero restart
 //
 // ─── PROMOTION STAGES ────────────────────────────────────────────────────────
-//   staging  → canary (5% traffic via shadow ring)
-//   canary   → production (if error rate delta < 0.5% over 10 minutes)
-//   production → rollback (operator command or automatic on error threshold)
+//
+//	staging  → canary (5% traffic via shadow ring)
+//	canary   → production (if error rate delta < 0.5% over 10 minutes)
+//	production → rollback (operator command or automatic on error threshold)
 //
 // The ModelStore does NOT implement traffic splitting itself.  That is the
 // ring manager's job.  The store only manages which model file is active.
@@ -57,15 +59,15 @@ const (
 // ModelVersion describes a stored model revision.
 type ModelVersion struct {
 	// Version is a semantic version string, e.g. "v1.4.2".
-	Version   string     `json:"version"`
+	Version string `json:"version"`
 	// Path is the absolute path to the ONNX file on disk.
-	Path      string     `json:"path"`
+	Path string `json:"path"`
 	// Stage is the current promotion stage.
-	Stage     ModelStage `json:"stage"`
+	Stage ModelStage `json:"stage"`
 	// Checksum is the SHA-256 hex digest of the ONNX file.
 	// Validated on Pull() to detect corruption or tampering.
-	Checksum  string     `json:"checksum"`
-	CreatedAt time.Time  `json:"created_at"`
+	Checksum  string    `json:"checksum"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // ModelStore manages versioned ONNX model files on local disk.

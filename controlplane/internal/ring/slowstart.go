@@ -33,28 +33,28 @@ import (
 // If error rate exceeds 1% during ramp: pause and wait for the next tick.
 
 const (
-	defaultSlowStartBatch    = 15              // vnodes per tick
-	defaultSlowStartInterval = 30 * time.Second
-	defaultSlowStartMaxErrPct = 1.0           // percent
+	defaultSlowStartBatch     = 15 // vnodes per tick
+	defaultSlowStartInterval  = 30 * time.Second
+	defaultSlowStartMaxErrPct = 1.0 // percent
 )
 
 // restoreState tracks a single backend's slow-start progress.
 type restoreState struct {
-	backendID    uint32
-	targetVnodes int  // final vnode count (from cfg.VnodesPerServer)
-	currentVnodes int // how many have been restored so far
-	paused       bool // true if error rate exceeded threshold last tick
+	backendID     uint32
+	targetVnodes  int  // final vnode count (from cfg.VnodesPerServer)
+	currentVnodes int  // how many have been restored so far
+	paused        bool // true if error rate exceeded threshold last tick
 }
 
 // SlowStartController manages gradual vnode restoration for recovered backends.
 // It is embedded in the ring.Manager for direct map access.
 type SlowStartController struct {
-	mu       sync.Mutex
+	mu        sync.Mutex
 	restoring map[uint32]*restoreState
 
-	batchSize    int
-	interval     time.Duration
-	maxErrorPct  float64
+	batchSize   int
+	interval    time.Duration
+	maxErrorPct float64
 
 	log *zap.Logger
 

@@ -40,12 +40,12 @@ type KANActor struct {
 
 	// Dedicated OS-thread inference goroutine.
 	inferCh  chan inferRequest // send inference jobs here
-	inputBuf []float32        // pre-allocated; only touched by inference goroutine
+	inputBuf []float32         // pre-allocated; only touched by inference goroutine
 
 	// Equation audit state.
-	equationMu      sync.Mutex
+	equationMu       sync.Mutex
 	lastEquationHash [16]byte // MD5 of the equation string from previous WriteAuditLog
-	equationVersion int      // incremented on each WriteAuditLog call
+	equationVersion  int      // incremented on each WriteAuditLog call
 }
 
 // inferRequest carries one inference job through inferCh.
@@ -176,10 +176,12 @@ func (k *KANActor) Infer(ctx context.Context, state []float64) ([]float64, error
 // and pasted here after each model update (SRE-auditable).
 //
 // Example equations (from KAN-LB paper's traffic routing scenario):
-//   w_i ≈ max(0, base_i - λ_cpu × cpu_i - λ_lat × ewma_latency_i)
+//
+//	w_i ≈ max(0, base_i - λ_cpu × cpu_i - λ_lat × ewma_latency_i)
 //
 // State layout: [cpu_0, conns_0, queue_0, latency_0, tx_0, rx_0, health_0, err_0,
-//                cpu_1, conns_1, ... | total_rps, p99, time_sin, time_cos]
+//
+//	cpu_1, conns_1, ... | total_rps, p99, time_sin, time_cos]
 func (k *KANActor) symbolicFallback(state []float64) []float64 {
 	const perServer = 8
 	if len(state) < perServer {
@@ -213,12 +215,13 @@ func (k *KANActor) symbolicFallback(state []float64) []float64 {
 // model is promoted to production.
 //
 // Equation drift detection rationale:
-//   A KAN model trained on a new dataset (daily retraining) should produce
-//   equations that differ only slightly from the previous version.  A large
-//   coefficient change (>0.15) suggests the training distribution has changed
-//   significantly (e.g. a new traffic pattern, a changed backend fleet size, or
-//   a reward function modification).  Automated promotion without SRE review in
-//   such cases risks a silent routing policy change.
+//
+//	A KAN model trained on a new dataset (daily retraining) should produce
+//	equations that differ only slightly from the previous version.  A large
+//	coefficient change (>0.15) suggests the training distribution has changed
+//	significantly (e.g. a new traffic pattern, a changed backend fleet size, or
+//	a reward function modification).  Automated promotion without SRE review in
+//	such cases risks a silent routing policy change.
 func (k *KANActor) WriteAuditLog(version string) {
 	const equation = "w_i = max(0, 1 - 0.42·cpu_i - 0.31·latency_i/1000 - 10·errRate_i) × health_i"
 	newHash := md5.Sum([]byte(equation)) //nolint:gosec // used for diff, not security
@@ -245,7 +248,7 @@ func (k *KANActor) WriteAuditLog(version string) {
 		// A complete diff requires the symbolic equation to be machine-parseable;
 		// the hash serves as the lightweight change detector.
 		k.log.Warn("KAN equation changed since last audit — SRE review required before promoting model",
-			fields...
+			fields...,
 		)
 		return
 	}

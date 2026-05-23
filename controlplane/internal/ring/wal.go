@@ -18,10 +18,10 @@ import (
 // stay in sync.  Without a WAL, a daemon crash between computing a ring update
 // and pushing it to the eBPF map leaves the two permanently diverged:
 //
-//   Step 1: daemon computes new vnode assignment (ring updated in memory)
-//   CRASH HERE — eBPF map still has old assignment
-//   Step 2: daemon restarts with empty ring
-//   → eBPF map routes to X backends; daemon ring knows about Y backends
+//	Step 1: daemon computes new vnode assignment (ring updated in memory)
+//	CRASH HERE — eBPF map still has old assignment
+//	Step 2: daemon restarts with empty ring
+//	→ eBPF map routes to X backends; daemon ring knows about Y backends
 //
 // Fix: write the intended mutation to the WAL (fsync) BEFORE applying it to
 // the in-memory ring or the eBPF map.  On restart, replay any entries that
@@ -31,10 +31,10 @@ import (
 // Committed entries are removed during the next Checkpoint() call.
 //
 // Write order:
-//   1. WAL.Write(op)        — write + fsync
-//   2. Apply to in-memory ring
-//   3. Push to eBPF map
-//   4. WAL.Commit(seq)      — mark committed; Checkpoint() when all done
+//  1. WAL.Write(op)        — write + fsync
+//  2. Apply to in-memory ring
+//  3. Push to eBPF map
+//  4. WAL.Commit(seq)      — mark committed; Checkpoint() when all done
 type RingWAL struct {
 	mu   sync.Mutex
 	f    *os.File
@@ -46,7 +46,7 @@ type RingWAL struct {
 // WALEntry is a single ring mutation record.
 type WALEntry struct {
 	Seq       uint64 `json:"seq"`
-	Op        string `json:"op"`             // "set_vnode" | "add" | "remove"
+	Op        string `json:"op"` // "set_vnode" | "add" | "remove"
 	BackendID uint32 `json:"id"`
 	Vnodes    int    `json:"vnodes,omitempty"`
 	Committed bool   `json:"committed"`
