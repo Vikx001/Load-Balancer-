@@ -5,14 +5,18 @@ SHELL := /bin/bash
 REGISTRY    ?= omega-lb
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 IMAGE       := $(REGISTRY)/omega-lb:$(VERSION)
+DOCKER_COMPOSE := $(shell if command -v docker-compose >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
 
 GO_DIR      := controlplane
 ML_DIR      := ml
 BENCH_DIR   := bench
 EBPF_DIR    := ebpf/kern
 DEPLOY_DIR  := deploy
+OBS_STAGE_ROOT := $(HOME)/.omegalb-observability
+OBS_STAGE_MONITORING := $(OBS_STAGE_ROOT)/monitoring
+OBS_STAGE_SCRIPTS := $(OBS_STAGE_ROOT)/scripts
 
-.PHONY: help build build-ebpf build-go docker-build docker-run docker-demo \
+.PHONY: help build build-ebpf build-go docker-build docker-run docker-demo observability-demo observability-local \
 	desktop-run desktop-build-macos desktop-build-windows \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
@@ -40,10 +44,28 @@ docker-build: ## Build Docker image
 	docker build -t $(IMAGE) -f $(DEPLOY_DIR)/docker/Dockerfile .
 
 docker-run: docker-build ## Run full stack in Docker Compose
-	docker compose -f $(DEPLOY_DIR)/docker/docker-compose.yml up
+	$(DOCKER_COMPOSE) -f $(DEPLOY_DIR)/docker/docker-compose.yml up
 
 docker-demo: ## Run Python demo stack in Docker (no eBPF, works on macOS/Windows)
-	docker compose -f $(DEPLOY_DIR)/docker/docker-compose-demo.yml up --build
+	$(DOCKER_COMPOSE) -f $(DEPLOY_DIR)/docker/docker-compose-demo.yml up --build
+
+observability-demo: ## Run demo stack + Prometheus + Grafana + OTEL + Alertmanager
+	@mkdir -p "$(OBS_STAGE_MONITORING)" "$(OBS_STAGE_SCRIPTS)"
+	@cp $(DEPLOY_DIR)/monitoring/prometheus.yml $(DEPLOY_DIR)/monitoring/prometheus-local.yml \
+		$(DEPLOY_DIR)/monitoring/alerts.yml $(DEPLOY_DIR)/monitoring/alertmanager.yml \
+		$(DEPLOY_DIR)/monitoring/otel-collector.yml "$(OBS_STAGE_MONITORING)/"
+	@cp scripts/alert_sink.py "$(OBS_STAGE_SCRIPTS)/"
+	OMEGALB_MONITORING_DIR="$(OBS_STAGE_MONITORING)" OMEGALB_SCRIPTS_DIR="$(OBS_STAGE_SCRIPTS)" \
+		$(DOCKER_COMPOSE) -f $(DEPLOY_DIR)/monitoring/docker-compose.yml up --build
+
+observability-local: ## Run Prometheus + Grafana + OTEL + Alertmanager against local demo processes
+	@mkdir -p "$(OBS_STAGE_MONITORING)" "$(OBS_STAGE_SCRIPTS)"
+	@cp $(DEPLOY_DIR)/monitoring/prometheus-local.yml $(DEPLOY_DIR)/monitoring/alerts.yml \
+		$(DEPLOY_DIR)/monitoring/alertmanager.yml $(DEPLOY_DIR)/monitoring/otel-collector.yml \
+		"$(OBS_STAGE_MONITORING)/"
+	@cp scripts/alert_sink.py "$(OBS_STAGE_SCRIPTS)/"
+	OMEGALB_MONITORING_DIR="$(OBS_STAGE_MONITORING)" OMEGALB_SCRIPTS_DIR="$(OBS_STAGE_SCRIPTS)" \
+		$(DOCKER_COMPOSE) -f $(DEPLOY_DIR)/monitoring/docker-compose.local.yml up -d
 
 docker-push: docker-build ## Push image to registry
 	docker push $(IMAGE)

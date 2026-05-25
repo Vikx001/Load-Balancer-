@@ -1,0 +1,165 @@
+services:
+  backends:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["python", "-m", "demo.backends"]
+    environment:
+      OMEGA_BACKEND_HOST: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; [u.urlopen(f'http://127.0.0.1:{p}/_health', timeout=2).read() for p in (9000,9001,9002,9003)]"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+    networks: [observability]
+
+  proxy:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["python", "-m", "demo.proxy"]
+    ports:
+      - "8080:8080"
+    environment:
+      OMEGA_CONFIG: /app/omega-lb-docker.yaml
+      OMEGA_ADMIN_TOKEN: local-dev-token
+      OMEGA_ADMIN_ALLOWLIST: 127.0.0.1/32,::1/128,172.16.0.0/12
+      OMEGA_ADMIN_RATE_LIMIT_PER_MIN: "120"
+    volumes:
+      - metrics:/app/demo
+    depends_on:
+      backends:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/_omega/status', timeout=3).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+    networks: [observability]
+    restart: unless-stopped
+
+  loadgen:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["python", "-m", "demo.loadgen"]
+    environment:
+      OMEGA_PROXY_URL: http://proxy:8080
+    depends_on:
+      proxy:
+        condition: service_healthy
+    networks: [observability]
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+    command: ["python", "-m", "streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    environment:
+      OMEGALB_METRICS_PORT: "8001"
+      OMEGALB_OTEL_ENDPOINT: http://otel-collector:4318/v1/traces
+    volumes:
+      - metrics:/app/demo
+    depends_on:
+      proxy:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8501', timeout=3).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 8s
+    networks: [observability]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    command:
+      - --config.file=/etc/omegalb-monitoring/prometheus.yml
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ${OMEGALB_MONITORING_DIR:-.}:/etc/omegalb-monitoring:ro
+    depends_on:
+      alertmanager:
+        condition: service_started
+      dashboard:
+        condition: service_started
+    networks: [observability]
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/omegalb-monitoring/alertmanager.yml
+    ports:
+      - "9093:9093"
+    volumes:
+      - ${OMEGALB_MONITORING_DIR:-.}:/etc/omegalb-monitoring:ro
+    depends_on:
+      alert-sink:
+        condition: service_started
+    networks: [observability]
+    restart: unless-stopped
+
+  alert-sink:
+    image: python:3.11-slim
+    command: ["python", "/app/scripts/alert_sink.py"]
+    ports:
+      - "8088:8088"
+    volumes:
+      - ${OMEGALB_SCRIPTS_DIR:-../../scripts}:/app/scripts:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8088/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+    networks: [observability]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: omega-demo
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana-omegalb-dashboard.json:/var/lib/grafana/dashboards/omegalb-observability.json:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks: [observability]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.98.0
+    command: ["--config=/config/otel-collector.yml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+    volumes:
+      - ${OMEGALB_MONITORING_DIR:-.}:/config:ro
+    networks: [observability]
+    restart: unless-stopped
+
+volumes:
+  metrics:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge
