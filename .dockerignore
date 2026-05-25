@@ -15,9 +15,7 @@ docs/graphify
 docs/screenshots
 
 bench
-controlplane
 desktop
-ebpf
 tests
 tools
 
