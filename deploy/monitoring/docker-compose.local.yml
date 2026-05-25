@@ -1,0 +1,86 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    command:
+      - --config.file=/etc/omegalb-monitoring/prometheus-local.yml
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ${OMEGALB_MONITORING_DIR:-.}:/etc/omegalb-monitoring:ro
+    depends_on:
+      alertmanager:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [observability]
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/omegalb-monitoring/alertmanager.yml
+    ports:
+      - "9093:9093"
+    volumes:
+      - ${OMEGALB_MONITORING_DIR:-.}:/etc/omegalb-monitoring:ro
+    depends_on:
+      alert-sink:
+        condition: service_started
+    networks: [observability]
+    restart: unless-stopped
+
+  alert-sink:
+    image: python:3.11-slim
+    command: ["python", "/app/scripts/alert_sink.py"]
+    ports:
+      - "8088:8088"
+    volumes:
+      - ${OMEGALB_SCRIPTS_DIR:-../../scripts}:/app/scripts:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8088/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+    networks: [observability]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: omega-demo
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ${OMEGALB_GRAFANA_PROVISIONING_DIR:-./grafana/provisioning}:/etc/grafana/provisioning:ro
+      - ${OMEGALB_GRAFANA_DASHBOARDS_DIR:-.}:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [observability]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.98.0
+    command: ["--config=/config/otel-collector.yml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+    volumes:
+      - ${OMEGALB_MONITORING_DIR:-.}:/config:ro
+    networks: [observability]
+    restart: unless-stopped
+
+volumes:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge

@@ -20,6 +20,12 @@ import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from dashboard.observability import (
+    get_observability_status,
+    init_observability,
+    maybe_traced,
+    update_metrics_from_state,
+)
 
 # ── Live metrics bridge ────────────────────────────────────────────────────────
 try:
@@ -31,6 +37,8 @@ except ImportError:
 
 
 st.set_page_config(page_title="Omega-LB Console", layout="wide", initial_sidebar_state="collapsed")
+
+init_observability()
 
 C = {
     "bg": "#080C14",
@@ -194,67 +202,68 @@ def _init_sim():
 
 
 def _step_sim():
-    s = st.session_state
-    t = s.tick
-    rng = s.rng
-    rps = 1800 + 700 * math.sin(2 * math.pi * t / 60) + 350 * math.sin(2 * math.pi * t / 180)
-    if s.spike:
-        rps *= 2.4
-    w = s.vnodes / s.vnodes.sum()
-    load = np.zeros(N_SIM)
-    lat = np.zeros(N_SIM)
-    err = np.zeros(N_SIM)
-    cbf = [False] * N_SIM
-    for i in range(N_SIM):
-        if not s.health[i]:
-            continue
-        util = (w[i] * rps) / s.rl[i]
-        load[i] = min(util + SIM_BU[i] * 0.3 + rng.normal(0, 0.015), 1.0)
-        if load[i] > 0.80:
-            cbf[i] = True
-            load[i] = 0.80 + rng.uniform(0, 0.03)
-        sl = min(load[i], 0.97)
-        mu = 1.0 / (SIM_BL[i] / 1000)
-        lam = sl * mu
-        ml = 1000 / (mu - lam) if mu > lam else 5000
-        lat[i] = max(1.0, ml + rng.normal(0, ml * 0.04))
-        if i == s.fail:
-            err[i] = 0.14 + rng.uniform(0, 0.04)
-        elif load[i] > 0.85:
-            err[i] = (load[i] - 0.85) * 2.5
-        else:
-            err[i] = rng.uniform(0, 0.0015)
-        s.treq[i] += max(1, int(w[i] * rps / 10))
-        nr = max(1, int(w[i] * rps / 10))
-        s.sla_ok += int(nr * (1 - err[i]) * (1 if lat[i] < 200 else 0.5))
-        s.sla_tot += nr
-    s.cbf = cbf
-    h = np.array([1.0 if v else 0.0 for v in s.health])
-    inv = np.where(lat > 0, 1.0 / (lat + 1), 0.0) * h
-    raw = inv / inv.sum() if inv.sum() > 0 else h / max(h.sum(), 1)
-    s.wt = 0.88 * s.wt + 0.12 * raw
-    if t > 10:
-        xs = np.arange(10, dtype=float) - 4.5
-        slv = s.load[:, -10:].mean(axis=0)
-        d2 = np.dot(xs, xs)
-        slope = float(np.dot(xs, slv) / d2) if d2 > 0 else 0
-        s.proactive = (slope * 30) > 0.75
-        if s.proactive:
-            for i in range(N_SIM):
-                if load[i] > 0.70:
-                    s.vnodes[i] = max(50, s.vnodes[i] * 0.97)
-        else:
-            s.vnodes = s.vnodes * 0.99 + np.array([150.0] * N_SIM) * 0.01
-    s.lat = np.roll(s.lat, -1, axis=1)
-    s.lat[:, -1] = lat
-    s.load = np.roll(s.load, -1, axis=1)
-    s.load[:, -1] = load
-    s.rps = np.roll(s.rps, -1)
-    s.rps[-1] = rps
-    s.err = np.roll(s.err, -1, axis=1)
-    s.err[:, -1] = err
-    _gen_sim_logs(rng, w, lat, err, rps)
-    s.tick += 1
+    with maybe_traced("_step_sim"):
+        s = st.session_state
+        t = s.tick
+        rng = s.rng
+        rps = 1800 + 700 * math.sin(2 * math.pi * t / 60) + 350 * math.sin(2 * math.pi * t / 180)
+        if s.spike:
+            rps *= 2.4
+        w = s.vnodes / s.vnodes.sum()
+        load = np.zeros(N_SIM)
+        lat = np.zeros(N_SIM)
+        err = np.zeros(N_SIM)
+        cbf = [False] * N_SIM
+        for i in range(N_SIM):
+            if not s.health[i]:
+                continue
+            util = (w[i] * rps) / s.rl[i]
+            load[i] = min(util + SIM_BU[i] * 0.3 + rng.normal(0, 0.015), 1.0)
+            if load[i] > 0.80:
+                cbf[i] = True
+                load[i] = 0.80 + rng.uniform(0, 0.03)
+            sl = min(load[i], 0.97)
+            mu = 1.0 / (SIM_BL[i] / 1000)
+            lam = sl * mu
+            ml = 1000 / (mu - lam) if mu > lam else 5000
+            lat[i] = max(1.0, ml + rng.normal(0, ml * 0.04))
+            if i == s.fail:
+                err[i] = 0.14 + rng.uniform(0, 0.04)
+            elif load[i] > 0.85:
+                err[i] = (load[i] - 0.85) * 2.5
+            else:
+                err[i] = rng.uniform(0, 0.0015)
+            s.treq[i] += max(1, int(w[i] * rps / 10))
+            nr = max(1, int(w[i] * rps / 10))
+            s.sla_ok += int(nr * (1 - err[i]) * (1 if lat[i] < 200 else 0.5))
+            s.sla_tot += nr
+        s.cbf = cbf
+        h = np.array([1.0 if v else 0.0 for v in s.health])
+        inv = np.where(lat > 0, 1.0 / (lat + 1), 0.0) * h
+        raw = inv / inv.sum() if inv.sum() > 0 else h / max(h.sum(), 1)
+        s.wt = 0.88 * s.wt + 0.12 * raw
+        if t > 10:
+            xs = np.arange(10, dtype=float) - 4.5
+            slv = s.load[:, -10:].mean(axis=0)
+            d2 = np.dot(xs, xs)
+            slope = float(np.dot(xs, slv) / d2) if d2 > 0 else 0
+            s.proactive = (slope * 30) > 0.75
+            if s.proactive:
+                for i in range(N_SIM):
+                    if load[i] > 0.70:
+                        s.vnodes[i] = max(50, s.vnodes[i] * 0.97)
+            else:
+                s.vnodes = s.vnodes * 0.99 + np.array([150.0] * N_SIM) * 0.01
+        s.lat = np.roll(s.lat, -1, axis=1)
+        s.lat[:, -1] = lat
+        s.load = np.roll(s.load, -1, axis=1)
+        s.load[:, -1] = load
+        s.rps = np.roll(s.rps, -1)
+        s.rps[-1] = rps
+        s.err = np.roll(s.err, -1, axis=1)
+        s.err[:, -1] = err
+        _gen_sim_logs(rng, w, lat, err, rps)
+        s.tick += 1
 
 
 def _gen_sim_logs(rng, w, lat, err, rps):
@@ -323,64 +332,65 @@ def _gen_live_logs(N, lat, err, rps, health, names):
 
 
 def _load_data():
-    raw = _read_live()
-    if raw is not None:
-        N = raw.get("n_backends", len(raw["health"]))
-        lat = np.array(raw["latency_hist"])
-        load = np.array(raw["load_hist"])
-        err = np.array(raw["error_hist"])
-        rps = np.array(raw["rps_hist"])
-        treq = raw["total_requests"]
-        terr = raw["total_errors"]
-        sla = (1 - sum(terr) / max(1, sum(treq))) * 100
-        _gen_live_logs(
-            N, lat[:, -1], err[:, -1], rps[-1], raw["health"], raw.get("backend_names", [f"b{i}" for i in range(N)])
+    with maybe_traced("_load_data"):
+        raw = _read_live()
+        if raw is not None:
+            N = raw.get("n_backends", len(raw["health"]))
+            lat = np.array(raw["latency_hist"])
+            load = np.array(raw["load_hist"])
+            err = np.array(raw["error_hist"])
+            rps = np.array(raw["rps_hist"])
+            treq = raw["total_requests"]
+            terr = raw["total_errors"]
+            sla = (1 - sum(terr) / max(1, sum(treq))) * 100
+            _gen_live_logs(
+                N, lat[:, -1], err[:, -1], rps[-1], raw["health"], raw.get("backend_names", [f"b{i}" for i in range(N)])
+            )
+            return "live", dict(
+                N=N,
+                H=len(rps),
+                names=raw.get("backend_names", [f"backend-{i}" for i in range(N)]),
+                zones=raw.get("backend_zones", ["local"] * N),
+                lat=lat,
+                load=load,
+                err=err,
+                rps=rps,
+                health=raw["health"],
+                cbf=raw["cbf_active"],
+                vnodes=np.array(raw["vnode_counts"]),
+                rl=np.array(raw["rate_limits"]),
+                kan_weights=np.array(raw["kan_weights"]),
+                proactive=raw["proactive_active"],
+                treq=treq,
+                sla_pct=sla,
+                logs=st.session_state.get("live_logs", []),
+                tick=raw["tick"],
+                proxy_ts=raw["ts"],
+            )
+        _init_sim()
+        _step_sim()
+        s = st.session_state
+        return "demo", dict(
+            N=N_SIM,
+            H=H_SIM,
+            names=SIM_NAMES,
+            zones=SIM_ZONES,
+            lat=s.lat.copy(),
+            load=s.load.copy(),
+            err=s.err.copy(),
+            rps=s.rps.copy(),
+            health=list(s.health),
+            cbf=list(s.cbf),
+            vnodes=s.vnodes.copy(),
+            rl=s.rl.copy(),
+            kan_weights=s.wt.copy(),
+            proactive=s.proactive,
+            treq=list(s.treq),
+            sla_pct=s.sla_ok / s.sla_tot * 100 if s.sla_tot > 0 else 100.0,
+            logs=list(s.logs),
+            tick=s.tick,
+            proxy_ts=None,
         )
-        return "live", dict(
-            N=N,
-            H=len(rps),
-            names=raw.get("backend_names", [f"backend-{i}" for i in range(N)]),
-            zones=raw.get("backend_zones", ["local"] * N),
-            lat=lat,
-            load=load,
-            err=err,
-            rps=rps,
-            health=raw["health"],
-            cbf=raw["cbf_active"],
-            vnodes=np.array(raw["vnode_counts"]),
-            rl=np.array(raw["rate_limits"]),
-            kan_weights=np.array(raw["kan_weights"]),
-            proactive=raw["proactive_active"],
-            treq=treq,
-            sla_pct=sla,
-            logs=st.session_state.get("live_logs", []),
-            tick=raw["tick"],
-            proxy_ts=raw["ts"],
-        )
-    _init_sim()
-    _step_sim()
-    s = st.session_state
-    return "demo", dict(
-        N=N_SIM,
-        H=H_SIM,
-        names=SIM_NAMES,
-        zones=SIM_ZONES,
-        lat=s.lat.copy(),
-        load=s.load.copy(),
-        err=s.err.copy(),
-        rps=s.rps.copy(),
-        health=list(s.health),
-        cbf=list(s.cbf),
-        vnodes=s.vnodes.copy(),
-        rl=s.rl.copy(),
-        kan_weights=s.wt.copy(),
-        proactive=s.proactive,
-        treq=list(s.treq),
-        sla_pct=s.sla_ok / s.sla_tot * 100 if s.sla_tot > 0 else 100.0,
-        logs=list(s.logs),
-        tick=s.tick,
-        proxy_ts=None,
-    )
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -463,6 +473,9 @@ avg_err = float(np.mean([err[i, -1] * 100 for i in range(N) if health[i]])) if n
 avg_errp = float(np.mean([err[i, -6] * 100 for i in range(N) if health[i]])) if n_up and H > 6 else avg_err
 cbf_cnt = sum(cbf)
 total_reqs = sum(treq)
+
+# push current state to Prometheus (if enabled)
+update_metrics_from_state(cur_rps, avg_lat, avg_err, n_up, N, cbf_cnt, proactive, sla_pct)
 
 if n_up == N and cbf_cnt == 0:
     pill_c, pill_l = "p-ok", "Healthy"
@@ -970,6 +983,7 @@ with T[3]:
 
 # ═══ TAB 5 — SETUP ══════════════════════════════════════════════════════════════
 with T[4]:
+    obs = get_observability_status()
     # Connection status
     if mode == "live":
         st.markdown(
@@ -981,6 +995,33 @@ with T[4]:
             f'<div class="setup-box" style="border-color:{C["amber"]};"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;"><span class="pill p-demo"><span class="dot"></span>DEMO</span><span style="font-size:14px;font-weight:700;color:{C["text"]};">Proxy not running</span></div><div style="font-size:13px;color:{C["muted"]};">Showing built-in simulation. Start the proxy to see real traffic from your backends. The DEMO badge turns LIVE automatically.</div></div>',
             unsafe_allow_html=True,
         )
+
+    st.markdown('<div class="sh">Observability Exports</div>', unsafe_allow_html=True)
+    metrics_state = "Enabled" if obs["metrics_available"] else "Unavailable"
+    tracing_state = "Enabled" if obs["tracing_available"] else "Unavailable"
+    metrics_hint = (
+        f'Prometheus scrape endpoint: <span class="mono">127.0.0.1:{obs["metrics_port"]}</span>'
+        if obs["metrics_available"]
+        else "Install dashboard observability dependencies to expose metrics."
+    )
+    tracing_hint = (
+        f'OTLP exporter target: <span class="mono">{obs["otel_endpoint"]}</span>'
+        if obs["tracing_available"]
+        else "Tracing exporter inactive until OpenTelemetry packages are installed."
+    )
+    st.markdown(
+        f'<div class="setup-box"><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">'
+        f'<div style="background:{C["surface"]};border:1px solid {C["border"]};border-radius:8px;padding:14px 16px;">'
+        f'<div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:{C["muted"]};margin-bottom:6px;">Metrics</div>'
+        f'<div style="font-size:18px;font-weight:700;color:{C["text"]};margin-bottom:6px;">{metrics_state}</div>'
+        f'<div style="font-size:12px;color:{C["muted"]};">{metrics_hint}</div></div>'
+        f'<div style="background:{C["surface"]};border:1px solid {C["border"]};border-radius:8px;padding:14px 16px;">'
+        f'<div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:{C["muted"]};margin-bottom:6px;">Tracing</div>'
+        f'<div style="font-size:18px;font-weight:700;color:{C["text"]};margin-bottom:6px;">{tracing_state}</div>'
+        f'<div style="font-size:12px;color:{C["muted"]};">{tracing_hint}</div></div>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown('<div class="sh">Quick Start — connect your application in 5 steps</div>', unsafe_allow_html=True)
     steps = [

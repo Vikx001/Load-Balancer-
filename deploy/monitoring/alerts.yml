@@ -1,0 +1,32 @@
+groups:
+  - name: omegalb-observability
+    rules:
+      - alert: OmegaLBHighLatency
+        expr: avg_over_time(omegalb_dashboard_avg_latency_ms[5m]) > 200
+        for: 2m
+        labels:
+          severity: warning
+          service: omegalb-dashboard
+        annotations:
+          summary: Omega-LB latency is elevated
+          description: Average dashboard latency has stayed above 200 ms for at least 2 minutes.
+
+      - alert: OmegaLBRisingErrorRate
+        expr: delta(omegalb_dashboard_error_rate_pct[10m]) > 1 and avg_over_time(omegalb_dashboard_error_rate_pct[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          service: omegalb-dashboard
+        annotations:
+          summary: Omega-LB error rate is rising
+          description: Error rate increased by more than 1 percentage point over 10 minutes and remains elevated.
+
+      - alert: OmegaLBLowHealthyTargetCount
+        expr: (omegalb_dashboard_healthy_targets / omegalb_dashboard_total_targets) < 0.8
+        for: 1m
+        labels:
+          severity: critical
+          service: omegalb-dashboard
+        annotations:
+          summary: Omega-LB healthy target count is low
+          description: Fewer than 80% of registered targets are healthy.
