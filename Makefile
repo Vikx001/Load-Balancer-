@@ -15,6 +15,10 @@ DEPLOY_DIR  := deploy
 OBS_STAGE_ROOT := $(HOME)/.omegalb-observability
 OBS_STAGE_MONITORING := $(OBS_STAGE_ROOT)/monitoring
 OBS_STAGE_SCRIPTS := $(OBS_STAGE_ROOT)/scripts
+OBS_STAGE_GRAFANA := $(OBS_STAGE_ROOT)/grafana
+OBS_STAGE_GRAFANA_PROVISIONING := $(OBS_STAGE_GRAFANA)/provisioning
+OBS_STAGE_GRAFANA_DASHBOARDS := $(OBS_STAGE_GRAFANA)/dashboards
+OBS_STAGE_GRAFANA_DASHBOARD := $(OBS_STAGE_GRAFANA_DASHBOARDS)/omegalb-observability.json
 
 .PHONY: help build build-ebpf build-go docker-build docker-run docker-demo observability-demo observability-local \
 	desktop-run desktop-build-macos desktop-build-windows \
@@ -50,21 +54,33 @@ docker-demo: ## Run Python demo stack in Docker (no eBPF, works on macOS/Windows
 	$(DOCKER_COMPOSE) -f $(DEPLOY_DIR)/docker/docker-compose-demo.yml up --build
 
 observability-demo: ## Run demo stack + Prometheus + Grafana + OTEL + Alertmanager
-	@mkdir -p "$(OBS_STAGE_MONITORING)" "$(OBS_STAGE_SCRIPTS)"
+	@mkdir -p "$(OBS_STAGE_MONITORING)" "$(OBS_STAGE_SCRIPTS)" "$(OBS_STAGE_GRAFANA)"
+	@rm -rf "$(OBS_STAGE_GRAFANA_PROVISIONING)"
+	@rm -rf "$(OBS_STAGE_GRAFANA_DASHBOARDS)"
+	@mkdir -p "$(OBS_STAGE_GRAFANA_DASHBOARDS)"
 	@cp $(DEPLOY_DIR)/monitoring/prometheus.yml $(DEPLOY_DIR)/monitoring/prometheus-local.yml \
 		$(DEPLOY_DIR)/monitoring/alerts.yml $(DEPLOY_DIR)/monitoring/alertmanager.yml \
 		$(DEPLOY_DIR)/monitoring/otel-collector.yml "$(OBS_STAGE_MONITORING)/"
 	@cp scripts/alert_sink.py "$(OBS_STAGE_SCRIPTS)/"
+	@cp -R $(DEPLOY_DIR)/monitoring/grafana/provisioning "$(OBS_STAGE_GRAFANA)/"
+	@cp $(DEPLOY_DIR)/monitoring/grafana-omegalb-dashboard.json "$(OBS_STAGE_GRAFANA_DASHBOARD)"
 	OMEGALB_MONITORING_DIR="$(OBS_STAGE_MONITORING)" OMEGALB_SCRIPTS_DIR="$(OBS_STAGE_SCRIPTS)" \
+		OMEGALB_GRAFANA_PROVISIONING_DIR="$(OBS_STAGE_GRAFANA_PROVISIONING)" OMEGALB_GRAFANA_DASHBOARDS_DIR="$(OBS_STAGE_GRAFANA_DASHBOARDS)" \
 		$(DOCKER_COMPOSE) -f $(DEPLOY_DIR)/monitoring/docker-compose.yml up --build
 
 observability-local: ## Run Prometheus + Grafana + OTEL + Alertmanager against local demo processes
-	@mkdir -p "$(OBS_STAGE_MONITORING)" "$(OBS_STAGE_SCRIPTS)"
+	@mkdir -p "$(OBS_STAGE_MONITORING)" "$(OBS_STAGE_SCRIPTS)" "$(OBS_STAGE_GRAFANA)"
+	@rm -rf "$(OBS_STAGE_GRAFANA_PROVISIONING)"
+	@rm -rf "$(OBS_STAGE_GRAFANA_DASHBOARDS)"
+	@mkdir -p "$(OBS_STAGE_GRAFANA_DASHBOARDS)"
 	@cp $(DEPLOY_DIR)/monitoring/prometheus-local.yml $(DEPLOY_DIR)/monitoring/alerts.yml \
 		$(DEPLOY_DIR)/monitoring/alertmanager.yml $(DEPLOY_DIR)/monitoring/otel-collector.yml \
 		"$(OBS_STAGE_MONITORING)/"
 	@cp scripts/alert_sink.py "$(OBS_STAGE_SCRIPTS)/"
+	@cp -R $(DEPLOY_DIR)/monitoring/grafana/provisioning "$(OBS_STAGE_GRAFANA)/"
+	@cp $(DEPLOY_DIR)/monitoring/grafana-omegalb-dashboard.json "$(OBS_STAGE_GRAFANA_DASHBOARD)"
 	OMEGALB_MONITORING_DIR="$(OBS_STAGE_MONITORING)" OMEGALB_SCRIPTS_DIR="$(OBS_STAGE_SCRIPTS)" \
+		OMEGALB_GRAFANA_PROVISIONING_DIR="$(OBS_STAGE_GRAFANA_PROVISIONING)" OMEGALB_GRAFANA_DASHBOARDS_DIR="$(OBS_STAGE_GRAFANA_DASHBOARDS)" \
 		$(DOCKER_COMPOSE) -f $(DEPLOY_DIR)/monitoring/docker-compose.local.yml up -d
 
 docker-push: docker-build ## Push image to registry
