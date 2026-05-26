@@ -1,6 +1,4 @@
-"""
-ML requirements for Omega-LB training.
-"""
+# ML requirements for Omega-LB training.
 torch>=2.2.0
 numpy>=1.26.0
 onnx>=1.16.0

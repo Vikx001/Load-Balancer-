@@ -9,11 +9,9 @@ WORKDIR /app
 
 # Install Python deps first (layer caching)
 COPY requirements.txt ./
-COPY ml/requirements.txt ./ml-requirements.txt
 COPY dashboard/requirements.txt ./dashboard-requirements.txt
 RUN pip install --no-cache-dir \
     -r requirements.txt \
-    -r ml-requirements.txt \
     -r dashboard-requirements.txt
 
 # Copy source
@@ -21,9 +19,6 @@ COPY demo/       ./demo/
 COPY ml/         ./ml/
 COPY dashboard/  ./dashboard/
 COPY omega-lb.yaml ./
-
-# Pre-download model if it exists
-COPY ml/models/  ./ml/models/
 
 EXPOSE 8080 8501
 

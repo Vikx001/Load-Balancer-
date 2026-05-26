@@ -1,0 +1,42 @@
+name: Observability Smoke
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '.github/workflows/observability.yml'
+      - 'dashboard/**'
+      - 'deploy/monitoring/**'
+      - 'docs/observability.md'
+      - 'scripts/observability_smoke.py'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '.github/workflows/observability.yml'
+      - 'dashboard/**'
+      - 'deploy/monitoring/**'
+      - 'docs/observability.md'
+      - 'scripts/observability_smoke.py'
+
+jobs:
+  observability-smoke:
+    name: Prometheus + OTEL smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dashboard observability dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r dashboard/requirements.txt
+
+      - name: Validate Grafana dashboard JSON
+        run: python -m json.tool deploy/monitoring/grafana-omegalb-dashboard.json > /dev/null
+
+      - name: Run observability smoke test
+        run: python scripts/observability_smoke.py
