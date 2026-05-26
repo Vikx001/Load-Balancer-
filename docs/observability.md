@@ -2,6 +2,12 @@
 
 This repository exposes optional Prometheus metrics from the dashboard and can export OpenTelemetry traces to an OTLP collector.
 
+### Reality Check
+
+- `observability-local` and `observability-demo` provide real live telemetry for the running Python demo stack.
+- They do not yet instrument the full Linux Go control-plane + eBPF runtime end to end.
+- The production/runtime path for that lives under `controlplane/internal/*` and requires a Linux host with eBPF support.
+
 Prometheus metrics
 - The dashboard will start a small Prometheus metrics HTTP server on `OMEGALB_METRICS_PORT` (default `8001`) if `prometheus-client` is installed.
 - Default metrics exposed (prefix `omegalb_dashboard_`):
