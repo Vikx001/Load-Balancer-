@@ -136,8 +136,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana-omegalb-dashboard.json:/var/lib/grafana/dashboards/omegalb-observability.json:ro
+      - ${OMEGALB_GRAFANA_PROVISIONING_DIR:-./grafana/provisioning}:/etc/grafana/provisioning:ro
+      - ${OMEGALB_GRAFANA_DASHBOARDS_DIR:-.}:/var/lib/grafana/dashboards:ro
     depends_on:
       prometheus:
         condition: service_started
