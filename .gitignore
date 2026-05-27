@@ -52,6 +52,15 @@ bin/
 controlplane/bin/
 controlplane/vendor/
 
+# Local generated Node/docs artifacts
+package.json
+package-lock.json
+node_modules/
+docs/graphify/
+graphify-out/
+.venv-desktop/
+.venv-graphify/
+
 # Secrets
 .env
 .env.*
