@@ -1,5 +1,6 @@
 import json
 import time
+import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -50,7 +51,8 @@ class AlertSinkHandler(BaseHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer(("0.0.0.0", 8088), AlertSinkHandler)
-    print("alert-sink listening on :8088")
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger(__name__).info("alert-sink listening on :8088")
     server.serve_forever()
 
 
