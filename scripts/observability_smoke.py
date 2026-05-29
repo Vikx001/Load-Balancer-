@@ -1,4 +1,5 @@
 import importlib
+import logging
 import os
 import socket
 import sys
@@ -9,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+logging.basicConfig(level=logging.INFO)
 
 
 def _free_port():
@@ -106,7 +108,7 @@ def main():
         if "/v1/traces" not in trace_server.requests:
             raise RuntimeError(f"unexpected OTLP paths received: {trace_server.requests}")
 
-        print("OK observability smoke passed")
+        logging.getLogger(__name__).info("OK observability smoke passed")
     finally:
         trace_server.shutdown()
         trace_server.server_close()
