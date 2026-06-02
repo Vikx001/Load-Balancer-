@@ -254,3 +254,12 @@ clean: ## Remove build artifacts
 	rm -rf bin/ $(EBPF_DIR)/*.bpf.o
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
+
+# Quick daily check target: runs a lightweight lint + unit test for fast verification
+.PHONY: daily-check
+
+daily-check: ## Quick daily check: run lightweight Python lint and unit test
+	@echo "  [daily] running quick Python checks"
+	@command -v ruff >/dev/null 2>&1 || pip install ruff -q
+	ruff check --output-format=concise tests/ dashboard/ demo/ ml/ || true
+	python -m pytest tests/test_proxy_unit.py -q
