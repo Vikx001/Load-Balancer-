@@ -16,33 +16,34 @@ Architecture:
 The proxy writes demo/live_metrics.json every second.
 The dashboard reads it automatically when fresh (< 5 s old).
 """
+
 import subprocess, sys, os, time, signal, threading, atexit
 
-HERE    = os.path.dirname(os.path.abspath(__file__))
-ROOT    = os.path.dirname(HERE)
-VENV    = os.path.join(ROOT, ".venv", "bin", "python3")
-PYTHON  = VENV if os.path.exists(VENV) else sys.executable
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+VENV = os.path.join(ROOT, ".venv", "bin", "python3")
+PYTHON = VENV if os.path.exists(VENV) else sys.executable
 
 PROCESSES: list[subprocess.Popen] = []
 
 LAUNCH_ORDER = [
     {
-        "name":   "backends",
-        "cmd":    [PYTHON, "-m", "demo.backends"],
-        "wait_s": 1.5,   # give aiohttp time to bind all 4 ports
-        "ready":  "All 4 backends running",
+        "name": "backends",
+        "cmd": [PYTHON, "-m", "demo.backends"],
+        "wait_s": 1.5,  # give aiohttp time to bind all 4 ports
+        "ready": "All 4 backends running",
     },
     {
-        "name":   "proxy",
-        "cmd":    [PYTHON, "-m", "demo.proxy"],
+        "name": "proxy",
+        "cmd": [PYTHON, "-m", "demo.proxy"],
         "wait_s": 1.0,
-        "ready":  "Omega-LB proxy",
+        "ready": "Omega-LB proxy",
     },
     {
-        "name":   "loadgen",
-        "cmd":    [PYTHON, "-m", "demo.loadgen"],
+        "name": "loadgen",
+        "cmd": [PYTHON, "-m", "demo.loadgen"],
         "wait_s": 0.5,
-        "ready":  "Starting load generator",
+        "ready": "Starting load generator",
     },
 ]
 
@@ -56,10 +57,10 @@ def _stream(proc: subprocess.Popen, label: str):
 
 
 def _start(spec: dict) -> subprocess.Popen:
-    print(f"\n{'─'*60}")
+    print(f"\n{'─' * 60}")
     print(f"  Starting: {spec['name']}")
     print(f"  CMD: {' '.join(spec['cmd'])}")
-    print(f"{'─'*60}")
+    print(f"{'─' * 60}")
 
     proc = subprocess.Popen(
         spec["cmd"],
@@ -111,6 +112,7 @@ def _check_dashboard():
     """Check if Streamlit is already up; if not, print the launch command."""
     try:
         import urllib.request
+
         urllib.request.urlopen("http://localhost:8501", timeout=1)
         print("\n  Dashboard already running -> http://localhost:8501")
     except Exception:
@@ -155,8 +157,7 @@ def main():
             for proc in PROCESSES:
                 if proc.poll() is not None:
                     name = next(
-                        (s["name"] for s in LAUNCH_ORDER if PROCESSES.index(proc) == LAUNCH_ORDER.index(s)),
-                        "unknown"
+                        (s["name"] for s in LAUNCH_ORDER if PROCESSES.index(proc) == LAUNCH_ORDER.index(s)), "unknown"
                     )
                     print(f"\nWARNING: Process {name} (pid {proc.pid}) exited unexpectedly.")
             time.sleep(5)

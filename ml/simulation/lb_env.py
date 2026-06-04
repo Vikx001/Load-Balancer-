@@ -32,6 +32,7 @@ import numpy as np
 # Environment configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SimConfig:
     """
@@ -41,18 +42,19 @@ class SimConfig:
     so you can pass a ``PPOConfig`` directly or create a lightweight
     ``SimConfig`` for integration tests.
     """
+
     num_backends: int = 4
     # Reward weights
-    alpha: float = 0.01    # P99 latency penalty
-    beta: float = 0.1      # load variance penalty
-    gamma_r: float = 0.001 # throughput bonus
-    delta: float = 1.0     # capacity violation penalty (soft component)
+    alpha: float = 0.01  # P99 latency penalty
+    beta: float = 0.1  # load variance penalty
+    gamma_r: float = 0.001  # throughput bonus
+    delta: float = 1.0  # capacity violation penalty (soft component)
     # Episode length
     episode_len: int = 2048
     # Traffic pattern
     base_rps: float = 500.0
     amp_rps: float = 300.0
-    rps_period: float = 100.0   # steps per sine cycle
+    rps_period: float = 100.0  # steps per sine cycle
     # Backend capacity (reqs/step for M/M/1 model)
     capacity: float = 100.0
     service_rate: float = 10.0
@@ -64,7 +66,7 @@ class SimConfig:
     # absolute constraints.  Soft penalty alone (delta * violations) lets the
     # agent learn to tolerate violations when throughput is high enough.
     # Hard floors prevent this Goodhart's Law collapse.
-    hard_floor_cpu: float = 0.95    # any backend above this triggers -1000 penalty
+    hard_floor_cpu: float = 0.95  # any backend above this triggers -1000 penalty
     hard_floor_error: float = 0.01  # aggregate error rate above this triggers -500
     hard_floor_p99_ms: float = 500.0  # P99 above this triggers -200 penalty
 
@@ -86,6 +88,7 @@ class SimConfig:
 # ---------------------------------------------------------------------------
 # LBSimEnv
 # ---------------------------------------------------------------------------
+
 
 class LBSimEnv:
     """
@@ -172,9 +175,7 @@ class LBSimEnv:
         self._rejected_rps = 0.0
         return self._state(), {}
 
-    def step(
-        self, weights: np.ndarray
-    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step(self, weights: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """
         Apply routing *weights* for one time step.
 
@@ -197,16 +198,11 @@ class LBSimEnv:
             weights = weights / total_w
 
         # Sinusoidal traffic pattern
-        total_rps = (
-            self.cfg.base_rps
-            + self.cfg.amp_rps * math.sin(self.step_count / self.cfg.rps_period)
-        )
+        total_rps = self.cfg.base_rps + self.cfg.amp_rps * math.sin(self.step_count / self.cfg.rps_period)
         arrivals = weights * total_rps
 
         # M/M/1 queue update
-        self.loads = np.maximum(
-            0.0, self.loads + arrivals - self.cfg.service_rate
-        )
+        self.loads = np.maximum(0.0, self.loads + arrivals - self.cfg.service_rate)
         self.loads = np.minimum(self.loads, self.capacities * 1.2)
 
         # Deceptive server: report normal latency until 60% CPU, then spike 10×.
@@ -228,17 +224,15 @@ class LBSimEnv:
         # Track admitted vs rejected for reward-hacking detection.
         admitted = float(np.sum(arrivals))
         # Rejected = requests that arrive but find the queue above 95% capacity.
-        rejected = float(np.sum(
-            np.maximum(0.0, arrivals - np.maximum(0.0, self.capacities - self.loads))
-        ))
+        rejected = float(np.sum(np.maximum(0.0, arrivals - np.maximum(0.0, self.capacities - self.loads))))
         self._admitted_rps = 0.9 * self._admitted_rps + 0.1 * admitted
         self._rejected_rps = 0.9 * self._rejected_rps + 0.1 * rejected
 
         # ─── REWARD COMPUTATION ───────────────────────────────────────────────
         # Soft component (shaped gradient):
         reward = (
-            -self.cfg.alpha  * p99_ms
-            - self.cfg.beta  * variance * 100
+            -self.cfg.alpha * p99_ms
+            - self.cfg.beta * variance * 100
             + self.cfg.gamma_r * total_rps / 10
             - self.cfg.delta * violations
         )
@@ -258,13 +252,9 @@ class LBSimEnv:
         # traffic before it appears in the latency histogram (e.g. via 429 shedding
         # or by sending traffic to /dev/null backends), the rejection rate rises
         # without a proportional P99 increase.  Penalise this.
-        rejection_rate = (
-            self._rejected_rps / max(self._admitted_rps + self._rejected_rps, 1.0)
-        )
+        rejection_rate = self._rejected_rps / max(self._admitted_rps + self._rejected_rps, 1.0)
         if rejection_rate > self.REJECTION_RATE_WARN:
-            reward -= self.REJECTION_RATE_PENALTY * (
-                rejection_rate - self.REJECTION_RATE_WARN
-            )
+            reward -= self.REJECTION_RATE_PENALTY * (rejection_rate - self.REJECTION_RATE_WARN)
 
         self.step_count += 1
         terminated = False
@@ -280,16 +270,11 @@ class LBSimEnv:
             "reward_hacking_penalty": (
                 self.REJECTION_RATE_PENALTY * max(0.0, rejection_rate - self.REJECTION_RATE_WARN)
             ),
-            "deceptive_servers_active": [
-                i for i in self.cfg.deceptive_servers
-                if 0 <= i < self.n and cpu[i] > 0.60
-            ],
+            "deceptive_servers_active": [i for i in self.cfg.deceptive_servers if 0 <= i < self.n and cpu[i] > 0.60],
         }
         return self._state(), reward, terminated, truncated, info
 
-    def step_compat(
-        self, weights: np.ndarray
-    ) -> tuple[np.ndarray, float, bool]:
+    def step_compat(self, weights: np.ndarray) -> tuple[np.ndarray, float, bool]:
         """
         3-tuple API compatible with the PPOTrainer rollout loop.
 
@@ -310,21 +295,23 @@ class LBSimEnv:
             # For deceptive servers, the state vector deliberately shows the
             # pre-spike latency (cpu*100) so the agent must learn to hedge
             # without being given a warning signal.
-            per_server.extend([
-                float(cpu[i]),                           # cpu_utilisation
-                float(self.loads[i]),                    # active_connections
-                max(0.0, float(self.loads[i] - 50)),     # queue_depth
-                float(cpu[i] * 100),                     # ewma_latency_ms (pre-spike)
-                float(self.loads[i] * 1024),             # tx_bytes_per_sec
-                float(self.loads[i] * 512),              # rx_bytes_per_sec
-                1.0,                                     # health_status
-                max(0.0, (float(cpu[i]) - 0.8) * 0.5),  # error_rate_1m
-            ])
+            per_server.extend(
+                [
+                    float(cpu[i]),  # cpu_utilisation
+                    float(self.loads[i]),  # active_connections
+                    max(0.0, float(self.loads[i] - 50)),  # queue_depth
+                    float(cpu[i] * 100),  # ewma_latency_ms (pre-spike)
+                    float(self.loads[i] * 1024),  # tx_bytes_per_sec
+                    float(self.loads[i] * 512),  # rx_bytes_per_sec
+                    1.0,  # health_status
+                    max(0.0, (float(cpu[i]) - 0.8) * 0.5),  # error_rate_1m
+                ]
+            )
         t = self.step_count / 2000.0
         global_feats = [
-            float(np.sum(self.loads)),                          # total_rps
-            float(np.max(cpu) * 200),                          # p99_latency_ms
-            math.sin(2 * math.pi * t),                         # time_sin
-            math.cos(2 * math.pi * t),                         # time_cos
+            float(np.sum(self.loads)),  # total_rps
+            float(np.max(cpu) * 200),  # p99_latency_ms
+            math.sin(2 * math.pi * t),  # time_sin
+            math.cos(2 * math.pi * t),  # time_cos
         ]
         return np.array(per_server + global_feats, dtype=np.float32)

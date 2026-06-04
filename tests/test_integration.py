@@ -13,6 +13,7 @@ Run locally:
 Reference: Meta's Hermetic Server Testing, Google's Large Test guidelines
 ─────────────────────────────────────────────────────────────────────────────
 """
+
 import json
 import os
 import signal
@@ -33,9 +34,9 @@ if os.getenv("SKIP_INTEGRATION") == "1":
     )
 
 REPO_ROOT = Path(__file__).parent.parent
-PROXY_PORT = int(os.getenv("OMEGA_LB_PORT", "18080"))   # use ephemeral port in CI
+PROXY_PORT = int(os.getenv("OMEGA_LB_PORT", "18080"))  # use ephemeral port in CI
 BACKEND_PORTS = [19000, 19001, 19002, 19003]
-METRICS_FILE  = REPO_ROOT / "demo" / "live_metrics.json"
+METRICS_FILE = REPO_ROOT / "demo" / "live_metrics.json"
 
 PY = str(REPO_ROOT / ".venv" / "bin" / "python3")
 if not Path(PY).exists():
@@ -43,6 +44,7 @@ if not Path(PY).exists():
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _wait_for_port(host: str, port: int, timeout: float = 10.0) -> bool:
     """Return True when a TCP port accepts connections within *timeout* seconds."""
@@ -96,26 +98,25 @@ def _start_proxy(backend_ports: list[int], proxy_port: int) -> subprocess.Popen:
     import tempfile, yaml as _yaml
 
     cfg = {
-        "proxy":    {"host": "127.0.0.1", "port": proxy_port},
+        "proxy": {"host": "127.0.0.1", "port": proxy_port},
         "backends": [
             {"host": "127.0.0.1", "port": p, "name": f"backend-{i}", "zone": "local"}
             for i, p in enumerate(backend_ports)
         ],
-        "kan":          {"model_path": "ml/models/kan_actor.onnx"},
-        "cbf":          {"cap": 0.80, "lambda": 0.5},
+        "kan": {"model_path": "ml/models/kan_actor.onnx"},
+        "cbf": {"cap": 0.80, "lambda": 0.5},
         "rate_limiting": {"initial_rps": 1000, "min_rps": 100, "max_rps": 5000},
     }
 
     try:
         import yaml  # PyYAML
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, dir="/tmp"
-        )
+
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, dir="/tmp")
         yaml.dump(cfg, tmp)
         tmp.flush()
         cfg_path = tmp.name
     except ImportError:
-        cfg_path = str(REPO_ROOT / "omega-lb.yaml")   # fall back to repo config
+        cfg_path = str(REPO_ROOT / "omega-lb.yaml")  # fall back to repo config
 
     env = os.environ.copy()
     env["OMEGA_LB_CFG"] = cfg_path
@@ -133,6 +134,7 @@ def _start_proxy(backend_ports: list[int], proxy_port: int) -> subprocess.Popen:
 
 
 # ─── Session-scoped fixture: full demo stack ──────────────────────────────────
+
 
 @pytest.fixture(scope="module")
 def demo_stack():
@@ -188,15 +190,13 @@ def demo_stack():
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
-class TestProxyReachability:
 
+class TestProxyReachability:
     def test_proxy_accepts_connections(self, demo_stack):
         """The proxy must respond to at least one HTTP request."""
         url = demo_stack
         r = requests.get(url + "/", timeout=5)
-        assert r.status_code in (200, 201, 404, 503), (
-            f"Unexpected status {r.status_code} from proxy"
-        )
+        assert r.status_code in (200, 201, 404, 503), f"Unexpected status {r.status_code} from proxy"
 
     def test_twenty_sequential_requests_all_valid(self, demo_stack):
         """20 sequential GET / requests must all return a recognised HTTP code."""
@@ -225,7 +225,6 @@ class TestProxyReachability:
 
 
 class TestLoadDistribution:
-
     def test_multiple_backends_receive_traffic(self, demo_stack):
         """With 100 requests, at least 2 different backends should be hit."""
         url = demo_stack
@@ -247,7 +246,7 @@ class TestLoadDistribution:
         """No single backend should receive >80% of 100 requests (CBF cap check)."""
         url = demo_stack
         counts = {}
-        total  = 0
+        total = 0
         for i in range(100):
             r = requests.get(url + "/", timeout=5)
             if r.status_code == 200:
@@ -258,23 +257,20 @@ class TestLoadDistribution:
                     total += 1
                 except (ValueError, KeyError):
                     pass
-        if total >= 20:   # only assert if we got parseable responses
+        if total >= 20:  # only assert if we got parseable responses
             for b, c in counts.items():
                 share = c / total
-                assert share <= 0.90, (
-                    f"Backend {b} received {share:.0%} of traffic — exceeds 90% ceiling"
-                )
+                assert share <= 0.90, f"Backend {b} received {share:.0%} of traffic — exceeds 90% ceiling"
 
 
 class TestMetricsFile:
-
     def test_metrics_file_exists_after_requests(self, demo_stack):
         """demo/live_metrics.json must exist after requests are made."""
         url = demo_stack
         # Fire a few requests to trigger metric writes
         for _ in range(5):
             requests.get(url + "/", timeout=5)
-        time.sleep(1)   # wait for flush
+        time.sleep(1)  # wait for flush
         assert METRICS_FILE.exists(), "live_metrics.json does not exist"
 
     def test_metrics_file_is_valid_json(self, demo_stack):
@@ -291,14 +287,11 @@ class TestMetricsFile:
 
 
 class TestBackendHealthEndpoints:
-
     def test_each_backend_has_health_endpoint(self, demo_stack):
         """Every backend must respond to GET /health."""
         for port in BACKEND_PORTS:
             r = requests.get(f"http://127.0.0.1:{port}/health", timeout=3)
-            assert r.status_code in (200, 204), (
-                f"Backend on port {port} /health returned {r.status_code}"
-            )
+            assert r.status_code in (200, 204), f"Backend on port {port} /health returned {r.status_code}"
 
     def test_backend_response_contains_backend_id(self, demo_stack):
         """Backend / responses should include 'backend' field in JSON body."""
@@ -307,8 +300,6 @@ class TestBackendHealthEndpoints:
             if r.status_code == 200:
                 try:
                     data = r.json()
-                    assert "backend" in data, (
-                        f"Backend on port {port} missing 'backend' in response: {data}"
-                    )
+                    assert "backend" in data, f"Backend on port {port} missing 'backend' in response: {data}"
                 except ValueError:
                     pass  # non-JSON body is acceptable for some backends

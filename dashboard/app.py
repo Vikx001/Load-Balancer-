@@ -419,7 +419,7 @@ def _sparksvg(data, color, w=70, h=20):
     if len(d) < 2 or max(d) == min(d):
         return ""
     mn, mx = min(d), max(d)
-    pts = [f"{i/(len(d)-1)*w:.1f},{h-((v-mn)/(mx-mn))*h:.1f}" for i, v in enumerate(d)]
+    pts = [f"{i / (len(d) - 1) * w:.1f},{h - ((v - mn) / (mx - mn)) * h:.1f}" for i, v in enumerate(d)]
     return (
         f'<svg width="{w}" height="{h}" style="display:block;margin-top:6px;">'
         f'<polyline points="{" ".join(pts)}" fill="none" stroke="{color}" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" opacity="0.7"/></svg>'
@@ -489,10 +489,10 @@ mode_label = "LIVE" if mode == "live" else "DEMO"
 st.markdown(
     f"""<div class="phdr">
   <div><div class="phdr-t">Omega&#8209;LB &nbsp;/&nbsp; Load Balancer Console</div>
-  <div class="phdr-s">{"Real proxy data" if mode=="live" else "Simulation"} &nbsp;·&nbsp; {N} targets &nbsp;·&nbsp; {total_reqs:,} total requests</div></div>
+  <div class="phdr-s">{"Real proxy data" if mode == "live" else "Simulation"} &nbsp;·&nbsp; {N} targets &nbsp;·&nbsp; {total_reqs:,} total requests</div></div>
   <div style="display:flex;align-items:center;gap:16px;">
     <div style="text-align:center;"><div style="font-size:10px;color:{C["dim"]};letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px;">SLA</div>
-    <div style="font-size:15px;font-weight:700;color:{""+C["green"] if sla_pct>99 else C["amber"]};letter-spacing:-.02em;">{sla_pct:.2f}%</div></div>
+    <div style="font-size:15px;font-weight:700;color:{"" + C["green"] if sla_pct > 99 else C["amber"]};letter-spacing:-.02em;">{sla_pct:.2f}%</div></div>
     <div style="width:1px;height:32px;background:{C["border"]};"></div>
     <span class="pill {mode_pill}"><span class="dot"></span>{mode_label}</span>
     <span class="pill {pill_c}"><span class="dot"></span>{pill_l}</span>
@@ -533,14 +533,14 @@ with T[0]:
         (
             "Healthy Targets",
             f"{n_up} / {N}",
-            f'<span class="{"dn" if n_up<N else "fl"}">{"All passing health checks" if n_up==N else f"{N-n_up} unhealthy"}</span>',
+            f'<span class="{"dn" if n_up < N else "fl"}">{"All passing health checks" if n_up == N else f"{N - n_up} unhealthy"}</span>',
             C["green"],
             np.array([float(n_up)] * 30),
         ),
     ]
     for col, (lbl, val, dlt, acc, sp) in zip(k, kpis):
         col.markdown(
-            f'<div class="kpi" style="border-top:3px solid {acc};"><div class="kpi-lbl">{lbl}</div><div class="kpi-val">{val}</div>{_sparksvg(sp,acc)}<div class="kpi-dlt">{dlt}</div></div>',
+            f'<div class="kpi" style="border-top:3px solid {acc};"><div class="kpi-lbl">{lbl}</div><div class="kpi-val">{val}</div>{_sparksvg(sp, acc)}<div class="kpi-dlt">{dlt}</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -619,7 +619,7 @@ with T[0]:
         st.markdown("</div>", unsafe_allow_html=True)
     with cb:
         st.markdown(
-            f'<div class="sh">Live Request Log</div><div class="logpanel">{_log_html(logs,60)}</div>',
+            f'<div class="sh">Live Request Log</div><div class="logpanel">{_log_html(logs, 60)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -698,7 +698,7 @@ with T[0]:
             if cbf[i]
             else (f'<span class="cbf-warn">WARN</span>' if lv > 70 else f'<span class="cbf-ok">OK</span>')
         )
-        rows += f'<tr><td class="mono" style="color:{C["muted"]}">{NAMES[i]}</td><td style="color:{C["muted"]}">{ZONES[i]}</td><td>{sb}</td><td style="min-width:150px">{_bar(lv,COLS[i])}</td><td style="font-variant-numeric:tabular-nums">{"—" if not health[i] else f"{latv:.0f} ms"}</td><td style="font-variant-numeric:tabular-nums;color:{""+C["red"] if ev>1 else C["text"]}">{ev:.2f}%</td><td style="font-variant-numeric:tabular-nums;color:{C["muted"]}">{int(vnodes[i])}</td><td style="font-variant-numeric:tabular-nums;color:{C["muted"]}">{rl[i]:.0f}</td><td>{cb2}</td><td style="font-variant-numeric:tabular-nums;color:{C["muted"]}">{treq[i]/1000:.1f}K</td></tr>'
+        rows += f'<tr><td class="mono" style="color:{C["muted"]}">{NAMES[i]}</td><td style="color:{C["muted"]}">{ZONES[i]}</td><td>{sb}</td><td style="min-width:150px">{_bar(lv, COLS[i])}</td><td style="font-variant-numeric:tabular-nums">{"—" if not health[i] else f"{latv:.0f} ms"}</td><td style="font-variant-numeric:tabular-nums;color:{"" + C["red"] if ev > 1 else C["text"]}">{ev:.2f}%</td><td style="font-variant-numeric:tabular-nums;color:{C["muted"]}">{int(vnodes[i])}</td><td style="font-variant-numeric:tabular-nums;color:{C["muted"]}">{rl[i]:.0f}</td><td>{cb2}</td><td style="font-variant-numeric:tabular-nums;color:{C["muted"]}">{treq[i] / 1000:.1f}K</td></tr>'
     st.markdown(
         f'<div class="card"><table class="tbl"><thead><tr><th>Target</th><th>Zone</th><th>Status</th><th>Utilization</th><th>Latency</th><th>Error%</th><th>Vnodes</th><th>Rate cap</th><th>CBF</th><th>Requests</th></tr></thead><tbody>{rows}</tbody></table></div>',
         unsafe_allow_html=True,
@@ -773,7 +773,7 @@ with T[1]:
                 if cbf[i]
                 else (f'<span class="cbf-warn">WARN</span>' if cpu_c > 0.70 else f'<span class="cbf-ok">OK</span>')
             )
-            eq_rows += f'<tr><td class="mono" style="color:{C["muted"]}">{NAMES[i]}</td><td class="mono" style="font-size:11px;color:{C["muted"]}">max(0, 1&minus;0.42·<b style="color:{C["text"]}">{cpu_c:.3f}</b>&minus;0.31·<b style="color:{C["text"]}">{lat_c:.3f}</b>&minus;10·<b style="color:{C["text"]}">{err_c:.4f}</b>)·{int(health[i])}</td><td><b style="color:{COLS[i]}">{wsym:.4f}</b></td><td style="color:{""+C["red"] if margin<0 else C["muted"]}">{margin*100:+.1f}%</td><td>{cb3}</td></tr>'
+            eq_rows += f'<tr><td class="mono" style="color:{C["muted"]}">{NAMES[i]}</td><td class="mono" style="font-size:11px;color:{C["muted"]}">max(0, 1&minus;0.42·<b style="color:{C["text"]}">{cpu_c:.3f}</b>&minus;0.31·<b style="color:{C["text"]}">{lat_c:.3f}</b>&minus;10·<b style="color:{C["text"]}">{err_c:.4f}</b>)·{int(health[i])}</td><td><b style="color:{COLS[i]}">{wsym:.4f}</b></td><td style="color:{"" + C["red"] if margin < 0 else C["muted"]}">{margin * 100:+.1f}%</td><td>{cb3}</td></tr>'
         st.markdown(
             f'<div class="card"><table class="tbl"><thead><tr><th>Target</th><th>Equation &nbsp;w=max(0,1−0.42·cpu−0.31·lat−10·err)×health</th><th>Weight</th><th>Margin</th><th>Status</th></tr></thead><tbody>{eq_rows}</tbody></table></div>',
             unsafe_allow_html=True,
@@ -850,7 +850,7 @@ with T[2]:
             else (("Holding —", C["amber"]) if lv3 > 0.65 else ("Expanding ↑", C["green"]))
         )
         col.markdown(
-            f'<div class="kpi" style="border-top:3px solid {COLS[i]};"><div class="kpi-lbl">{NAMES[i][:14]}</div><div style="font-size:20px;font-weight:700;color:{C["text"]};letter-spacing:-.02em;margin-bottom:10px;font-variant-numeric:tabular-nums;">{arr:.0f} <span style="font-size:11px;font-weight:400;color:{C["muted"]}">/ {rl[i]:.0f} rps</span></div><div style="height:3px;background:{C["border"]};border-radius:2px;margin-bottom:8px;"><div style="width:{util*100:.1f}%;height:3px;background:{COLS[i]};border-radius:2px;"></div></div><div style="font-size:11px;color:{ac};font-weight:600;">DQN: {atxt}</div></div>',
+            f'<div class="kpi" style="border-top:3px solid {COLS[i]};"><div class="kpi-lbl">{NAMES[i][:14]}</div><div style="font-size:20px;font-weight:700;color:{C["text"]};letter-spacing:-.02em;margin-bottom:10px;font-variant-numeric:tabular-nums;">{arr:.0f} <span style="font-size:11px;font-weight:400;color:{C["muted"]}">/ {rl[i]:.0f} rps</span></div><div style="height:3px;background:{C["border"]};border-radius:2px;margin-bottom:8px;"><div style="width:{util * 100:.1f}%;height:3px;background:{COLS[i]};border-radius:2px;"></div></div><div style="font-size:11px;color:{ac};font-weight:600;">DQN: {atxt}</div></div>',
             unsafe_allow_html=True,
         )
     st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
@@ -904,7 +904,7 @@ with T[3]:
             else:
                 bdr, sl4, sc4 = C["green"], "Healthy", "p-ok"
             st.markdown(
-                f'<div style="background:{C["surface"]};border:1px solid {C["border"]};border-left:3px solid {bdr};border-radius:8px;padding:14px 16px;margin-bottom:10px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><span class="mono" style="font-size:12px;font-weight:600;color:{C["text"]}">{NAMES[i]}</span><span class="pill {sc4}"><span class="dot"></span>{sl4}</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;"><div><div style="font-size:9px;color:{C["dim"]};text-transform:uppercase;letter-spacing:.08em;">P50 Latency</div><div style="font-size:15px;font-weight:700;color:{C["text"]};font-variant-numeric:tabular-nums">{"—" if not health[i] else f"{lv4:.0f} ms"}</div></div><div><div style="font-size:9px;color:{C["dim"]};text-transform:uppercase;letter-spacing:.08em;">Error Rate</div><div style="font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:{""+C["red"] if ev4>1 else C["text"]}">{ev4:.2f}%</div></div><div><div style="font-size:9px;color:{C["dim"]};text-transform:uppercase;letter-spacing:.08em;">Utilization</div><div style="font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:{""+C["red"] if uv4>80 else C["text"]}">{uv4:.1f}%</div></div></div></div>',
+                f'<div style="background:{C["surface"]};border:1px solid {C["border"]};border-left:3px solid {bdr};border-radius:8px;padding:14px 16px;margin-bottom:10px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><span class="mono" style="font-size:12px;font-weight:600;color:{C["text"]}">{NAMES[i]}</span><span class="pill {sc4}"><span class="dot"></span>{sl4}</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;"><div><div style="font-size:9px;color:{C["dim"]};text-transform:uppercase;letter-spacing:.08em;">P50 Latency</div><div style="font-size:15px;font-weight:700;color:{C["text"]};font-variant-numeric:tabular-nums">{"—" if not health[i] else f"{lv4:.0f} ms"}</div></div><div><div style="font-size:9px;color:{C["dim"]};text-transform:uppercase;letter-spacing:.08em;">Error Rate</div><div style="font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:{"" + C["red"] if ev4 > 1 else C["text"]}">{ev4:.2f}%</div></div><div><div style="font-size:9px;color:{C["dim"]};text-transform:uppercase;letter-spacing:.08em;">Utilization</div><div style="font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:{"" + C["red"] if uv4 > 80 else C["text"]}">{uv4:.1f}%</div></div></div></div>',
                 unsafe_allow_html=True,
             )
     with hb:
@@ -974,8 +974,8 @@ with T[3]:
             ok = health[i] and err[i, -1 - j] < 0.08
             rc2c = C["green"] if ok else C["red"]
             rt = "200 OK" if ok else "503 Service Unavailable"
-            lt2 = f"{lat[i,-1-j]:.0f} ms" if health[i] else "timeout"
-            probe_rows += f"<tr><td style='color:{C['dim']};font-family:JetBrains Mono,monospace;'>{t_ago}s ago</td><td class='mono' style='color:{C['muted']}'>{NAMES[i]}</td><td style='color:{C['muted']}'>{ZONES[i]}</td><td><span style='color:{rc2c};font-weight:600;'>{rt}</span></td><td style='font-variant-numeric:tabular-nums;color:{C['muted']}'>{lt2}</td><td style='font-variant-numeric:tabular-nums;color:{C['muted']}'>{err[i,-1-j]*100:.2f}%</td></tr>"
+            lt2 = f"{lat[i, -1 - j]:.0f} ms" if health[i] else "timeout"
+            probe_rows += f"<tr><td style='color:{C['dim']};font-family:JetBrains Mono,monospace;'>{t_ago}s ago</td><td class='mono' style='color:{C['muted']}'>{NAMES[i]}</td><td style='color:{C['muted']}'>{ZONES[i]}</td><td><span style='color:{rc2c};font-weight:600;'>{rt}</span></td><td style='font-variant-numeric:tabular-nums;color:{C['muted']}'>{lt2}</td><td style='font-variant-numeric:tabular-nums;color:{C['muted']}'>{err[i, -1 - j] * 100:.2f}%</td></tr>"
     st.markdown(
         f'<div class="card" style="max-height:240px;overflow-y:auto;"><table class="tbl"><thead><tr><th>Time</th><th>Target</th><th>Zone</th><th>Result</th><th>RTT</th><th>Error%</th></tr></thead><tbody>{probe_rows}</tbody></table></div>',
         unsafe_allow_html=True,
@@ -987,7 +987,7 @@ with T[4]:
     # Connection status
     if mode == "live":
         st.markdown(
-            f'<div class="setup-box" style="border-color:{C["green"]};"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;"><span class="pill p-live"><span class="dot"></span>LIVE</span><span style="font-size:14px;font-weight:700;color:{C["text"]};">Proxy connected</span></div><div style="font-size:13px;color:{C["muted"]};">Real metrics from the running proxy. Data age: <b style="color:{C["text"]}">{round(time.time()-d["proxy_ts"],1)}s</b> &nbsp;·&nbsp; Tick: <b style="color:{C["text"]}">{d["tick"]}</b> &nbsp;·&nbsp; Total requests: <b style="color:{C["text"]}">{total_reqs:,}</b></div></div>',
+            f'<div class="setup-box" style="border-color:{C["green"]};"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;"><span class="pill p-live"><span class="dot"></span>LIVE</span><span style="font-size:14px;font-weight:700;color:{C["text"]};">Proxy connected</span></div><div style="font-size:13px;color:{C["muted"]};">Real metrics from the running proxy. Data age: <b style="color:{C["text"]}">{round(time.time() - d["proxy_ts"], 1)}s</b> &nbsp;·&nbsp; Tick: <b style="color:{C["text"]}">{d["tick"]}</b> &nbsp;·&nbsp; Total requests: <b style="color:{C["text"]}">{total_reqs:,}</b></div></div>',
             unsafe_allow_html=True,
         )
     else:
@@ -1019,7 +1019,7 @@ with T[4]:
         f'<div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:{C["muted"]};margin-bottom:6px;">Tracing</div>'
         f'<div style="font-size:18px;font-weight:700;color:{C["text"]};margin-bottom:6px;">{tracing_state}</div>'
         f'<div style="font-size:12px;color:{C["muted"]};">{tracing_hint}</div></div>'
-        f'</div></div>',
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
