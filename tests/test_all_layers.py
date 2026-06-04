@@ -3,18 +3,22 @@ Omega-LB End-to-End Test Suite
 Tests every layer that can run without Linux/eBPF.
 Run: python3 tests/test_all_layers.py
 """
+
 import sys, os, math, time, unittest, random
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ml', 'ppo'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ml', 'dqn_a3c'))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "ml", "ppo"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "ml", "dqn_a3c"))
 
 import torch
 import numpy as np
 
 # ─── Layer 3: KAN B-spline correctness ───────────────────────────────────────
 
+
 class TestKANLayer(unittest.TestCase):
     def setUp(self):
         from train_ppo_kan import KANLayer
+
         self.KANLayer = KANLayer
 
     def test_output_shape(self):
@@ -34,13 +38,14 @@ class TestKANLayer(unittest.TestCase):
     def test_basis_partition_of_unity(self):
         """B-spline basis functions should sum to 1 at any x in [-1,1]."""
         from train_ppo_kan import KANLayer
+
         kan = KANLayer(1, 1, grid_size=5, spline_order=3)
         x = torch.linspace(-1, 1, 50).unsqueeze(1)  # (50, 1)
         basis = kan.b_splines(x.clamp(-1, 1))  # (50, 1, n_coeff)
-        sums = basis.squeeze(1).sum(dim=-1)     # (50,)
+        sums = basis.squeeze(1).sum(dim=-1)  # (50,)
         self.assertTrue(
             torch.allclose(sums, torch.ones_like(sums), atol=1e-5),
-            f"Partition of unity failed, max deviation: {(sums - 1).abs().max().item():.6f}"
+            f"Partition of unity failed, max deviation: {(sums - 1).abs().max().item():.6f}",
         )
 
     def test_batch_invariance(self):
@@ -50,7 +55,7 @@ class TestKANLayer(unittest.TestCase):
         x = torch.randn(1, 8)
         with torch.no_grad():
             single = kan(x)
-            batch  = kan(x.expand(8, -1))
+            batch = kan(x.expand(8, -1))
         self.assertTrue(torch.allclose(single.expand(8, -1), batch, atol=1e-6))
 
     def test_no_nan_on_extreme_inputs(self):
@@ -63,9 +68,11 @@ class TestKANLayer(unittest.TestCase):
 
 # ─── Layer 3: KANActor end-to-end ────────────────────────────────────────────
 
+
 class TestKANActor(unittest.TestCase):
     def setUp(self):
         from train_ppo_kan import KANActor, PPOConfig
+
         cfg = PPOConfig(num_backends=4)
         self.actor = KANActor(cfg)
         self.cfg = cfg
@@ -93,6 +100,7 @@ class TestKANActor(unittest.TestCase):
 
 
 # ─── Layer 2: CBF safety projection ──────────────────────────────────────────
+
 
 class TestCBFProjection(unittest.TestCase):
     """Pure-Python re-implementation test matching cbf.go logic."""
@@ -125,31 +133,30 @@ class TestCBFProjection(unittest.TestCase):
     def test_sum_to_one(self):
         raw = [0.4, 0.3, 0.2, 0.1]
         loads = [0.5, 0.9, 0.3, 0.6]
-        caps  = [1.0, 1.0, 1.0, 1.0]
+        caps = [1.0, 1.0, 1.0, 1.0]
         w = self._cbf_project(raw, loads, caps)
         self.assertAlmostEqual(sum(w), 1.0, places=5)
 
     def test_all_nonnegative(self):
         raw = [0.25, 0.25, 0.25, 0.25]
         loads = [0.7, 0.7, 0.7, 0.7]
-        caps  = [1.0, 1.0, 1.0, 1.0]
+        caps = [1.0, 1.0, 1.0, 1.0]
         w = self._cbf_project(raw, loads, caps)
         self.assertTrue(all(wi >= -1e-9 for wi in w))
 
     def test_cbf_reduces_overloaded_backends(self):
         """Weight on overloaded backend should be reduced after projection."""
-        raw   = [0.9, 0.03, 0.03, 0.04]
+        raw = [0.9, 0.03, 0.03, 0.04]
         loads = [0.85, 0.1, 0.1, 0.1]  # backend-0 near cap
-        caps  = [1.0,  1.0, 1.0, 1.0]
+        caps = [1.0, 1.0, 1.0, 1.0]
         w_safe = self._cbf_project(raw, loads, caps)
-        self.assertLess(w_safe[0], raw[0],
-            "CBF should reduce weight on overloaded backend")
+        self.assertLess(w_safe[0], raw[0], "CBF should reduce weight on overloaded backend")
 
     def test_already_safe_unchanged(self):
         """If load is low, projection should leave weights nearly unchanged."""
-        raw   = [0.4, 0.3, 0.2, 0.1]
+        raw = [0.4, 0.3, 0.2, 0.1]
         loads = [0.1, 0.1, 0.1, 0.1]
-        caps  = [1.0, 1.0, 1.0, 1.0]
+        caps = [1.0, 1.0, 1.0, 1.0]
         w_safe = self._cbf_project(raw, loads, caps)
         for i in range(4):
             self.assertAlmostEqual(w_safe[i], raw[i], delta=0.05)
@@ -157,31 +164,34 @@ class TestCBFProjection(unittest.TestCase):
 
 # ─── Layer 1: H&A consistent ring ────────────────────────────────────────────
 
+
 class TestConsistentRing(unittest.TestCase):
     """Pure-Python H&A ring matching ring.go logic."""
 
     def _murmur3(self, key: bytes, seed: int = 0) -> int:
         h = seed & 0xFFFFFFFF
         for i in range(0, len(key) - 3, 4):
-            k = int.from_bytes(key[i:i+4], 'little') & 0xFFFFFFFF
-            k = (k * 0xcc9e2d51) & 0xFFFFFFFF
+            k = int.from_bytes(key[i : i + 4], "little") & 0xFFFFFFFF
+            k = (k * 0xCC9E2D51) & 0xFFFFFFFF
             k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF
-            k = (k * 0x1b873593) & 0xFFFFFFFF
+            k = (k * 0x1B873593) & 0xFFFFFFFF
             h ^= k
             h = ((h << 13) | (h >> 19)) & 0xFFFFFFFF
-            h = (h * 5 + 0xe6546b64) & 0xFFFFFFFF
+            h = (h * 5 + 0xE6546B64) & 0xFFFFFFFF
         # tail
         tail = len(key) & 3
         if tail:
-            k = int.from_bytes(key[-(tail):] + b'\x00' * (4 - tail), 'little') & 0xFFFFFFFF
-            k = (k * 0xcc9e2d51) & 0xFFFFFFFF
+            k = int.from_bytes(key[-(tail):] + b"\x00" * (4 - tail), "little") & 0xFFFFFFFF
+            k = (k * 0xCC9E2D51) & 0xFFFFFFFF
             k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF
-            k = (k * 0x1b873593) & 0xFFFFFFFF
+            k = (k * 0x1B873593) & 0xFFFFFFFF
             h ^= k
         # finalise
         h ^= len(key)
-        h ^= h >> 16; h = (h * 0x85ebca6b) & 0xFFFFFFFF
-        h ^= h >> 13; h = (h * 0xc2b2ae35) & 0xFFFFFFFF
+        h ^= h >> 16
+        h = (h * 0x85EBCA6B) & 0xFFFFFFFF
+        h ^= h >> 13
+        h = (h * 0xC2B2AE35) & 0xFFFFFFFF
         h ^= h >> 16
         return h
 
@@ -231,8 +241,7 @@ class TestConsistentRing(unittest.TestCase):
         expected = N / 4
         for bid, c in counts.items():
             deviation = abs(c - expected) / expected
-            self.assertLess(deviation, 0.20,
-                f"Backend {bid}: {c} hits, {deviation*100:.1f}% from ideal")
+            self.assertLess(deviation, 0.20, f"Backend {bid}: {c} hits, {deviation * 100:.1f}% from ideal")
 
     def test_adding_backend_minimal_disruption(self):
         """Adding 1 backend should re-route ≤30% of keys (ideal: 25%)."""
@@ -240,8 +249,7 @@ class TestConsistentRing(unittest.TestCase):
         ring5 = self._build_ring([1, 2, 3, 4, 5])
         keys = [f"req-{i}" for i in range(10000)]
         moved = sum(1 for k in keys if self._route(ring4, k) != self._route(ring5, k))
-        self.assertLess(moved / len(keys), 0.35,
-            f"Too many keys moved: {moved/len(keys)*100:.1f}%")
+        self.assertLess(moved / len(keys), 0.35, f"Too many keys moved: {moved / len(keys) * 100:.1f}%")
 
     def test_removing_backend_routes_to_others(self):
         ring4 = self._build_ring([1, 2, 3, 4])
@@ -252,6 +260,7 @@ class TestConsistentRing(unittest.TestCase):
 
 
 # ─── Layer 5: Proactive pre-distribution ─────────────────────────────────────
+
 
 class TestProactiveLayer(unittest.TestCase):
     def _linear_slope(self, samples):
@@ -294,9 +303,11 @@ class TestProactiveLayer(unittest.TestCase):
 
 # ─── Layer 4: DQN rate limiter logic ─────────────────────────────────────────
 
+
 class TestDQNRateLimiter(unittest.TestCase):
     def setUp(self):
         from train_dqn_a3c import DQNConfig, DQNServiceAgent, RateLimitEnv
+
         self.cfg = DQNConfig()
         self.DQNServiceAgent = DQNServiceAgent
         self.RateLimitEnv = RateLimitEnv
@@ -355,15 +366,17 @@ class TestDQNRateLimiter(unittest.TestCase):
 
 # ─── PPO training convergence ─────────────────────────────────────────────────
 
+
 class TestPPOConvergence(unittest.TestCase):
     def test_training_reduces_loss(self):
         """PPO should reduce mean reward variance over 50 episodes."""
         from train_ppo_kan import PPOConfig, PPOTrainer, LBSimEnv
+
         cfg = PPOConfig(num_backends=4, total_steps=10_000)
         trainer = PPOTrainer(cfg)
         env = LBSimEnv(cfg)
         rewards_early = []
-        rewards_late  = []
+        rewards_late = []
         for ep in range(50):
             state = env.reset()
             ep_reward = 0
@@ -383,20 +396,23 @@ class TestPPOConvergence(unittest.TestCase):
 
         # After training rollouts, late rewards should be >= early (or at least not much worse)
         mean_early = sum(rewards_early) / len(rewards_early)
-        mean_late  = sum(rewards_late)  / len(rewards_late)
+        mean_late = sum(rewards_late) / len(rewards_late)
         # With a random untrained model, reward can be very negative.
         # We just verify it doesn't catastrophically diverge (stays finite & bounded).
         print(f"\n  PPO: early reward={mean_early:.2f}, late reward={mean_late:.2f}")
         self.assertFalse(math.isnan(mean_late), "PPO rewards became NaN")
         self.assertFalse(math.isinf(mean_late), "PPO rewards became Inf")
         # Both early and late should be finite and of similar magnitude
-        self.assertLess(abs(mean_late - mean_early) / (abs(mean_early) + 1), 0.5,
-            "PPO rewards changed by >50% — training is diverging")
+        self.assertLess(
+            abs(mean_late - mean_early) / (abs(mean_early) + 1),
+            0.5,
+            "PPO rewards changed by >50% — training is diverging",
+        )
 
 
 if __name__ == "__main__":
     loader = unittest.TestLoader()
-    suite  = unittest.TestSuite()
+    suite = unittest.TestSuite()
     test_classes = [
         TestKANLayer,
         TestKANActor,

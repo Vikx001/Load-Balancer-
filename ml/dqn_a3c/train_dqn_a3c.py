@@ -24,10 +24,11 @@ from torch.optim import Adam
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class DQNConfig:
-    state_dim: int = 6          # [rps, cpu, queue, errRate, p99, limit]
-    action_dim: int = 3         # decrease / hold / increase
+    state_dim: int = 6  # [rps, cpu, queue, errRate, p99, limit]
+    action_dim: int = 3  # decrease / hold / increase
     hidden: int = 128
     lr: float = 1e-3
     gamma: float = 0.99
@@ -44,12 +45,15 @@ class DQNConfig:
 
 # ─── Q-Network ────────────────────────────────────────────────────────────────
 
+
 class QNetwork(nn.Module):
     def __init__(self, state_dim: int, action_dim: int, hidden: int = 128):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim, hidden), nn.ReLU(),
-            nn.Linear(hidden, hidden),    nn.ReLU(),
+            nn.Linear(state_dim, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, hidden),
+            nn.ReLU(),
             nn.Linear(hidden, action_dim),
         )
 
@@ -58,6 +62,7 @@ class QNetwork(nn.Module):
 
 
 # ─── Replay Buffer ────────────────────────────────────────────────────────────
+
 
 class ReplayBuffer:
     def __init__(self, capacity: int):
@@ -76,6 +81,7 @@ class ReplayBuffer:
 
 # ─── DQN Agent (per service) ──────────────────────────────────────────────────
 
+
 class DQNServiceAgent:
     def __init__(self, service_id: int, cfg: DQNConfig):
         self.service_id = service_id
@@ -90,10 +96,7 @@ class DQNServiceAgent:
 
     def select_action(self, state: np.ndarray) -> int:
         # ε-greedy
-        self.epsilon = max(
-            self.cfg.epsilon_end,
-            self.cfg.epsilon_start - self.step_count / self.cfg.epsilon_decay
-        )
+        self.epsilon = max(self.cfg.epsilon_end, self.cfg.epsilon_start - self.step_count / self.cfg.epsilon_decay)
         if random.random() < self.epsilon:
             return random.randint(0, self.cfg.action_dim - 1)
         with torch.no_grad():
@@ -105,11 +108,11 @@ class DQNServiceAgent:
             return 0.0
 
         states, actions, rewards, next_states, dones = self.buffer.sample(self.cfg.batch_size)
-        s  = torch.FloatTensor(states)
-        a  = torch.LongTensor(actions).unsqueeze(1)
-        r  = torch.FloatTensor(rewards).unsqueeze(1)
+        s = torch.FloatTensor(states)
+        a = torch.LongTensor(actions).unsqueeze(1)
+        r = torch.FloatTensor(rewards).unsqueeze(1)
         ns = torch.FloatTensor(next_states)
-        d  = torch.FloatTensor(dones).unsqueeze(1)
+        d = torch.FloatTensor(dones).unsqueeze(1)
 
         q_curr = self.policy_net(s).gather(1, a)
         with torch.no_grad():
@@ -131,6 +134,7 @@ class DQNServiceAgent:
 
 # ─── A3C Global Actor ─────────────────────────────────────────────────────────
 
+
 class A3CGlobalActor(nn.Module):
     """Shared actor-critic network for A3C. Workers compute local gradients
     and apply them to this shared network."""
@@ -138,11 +142,13 @@ class A3CGlobalActor(nn.Module):
     def __init__(self, state_dim: int, action_dim: int):
         super().__init__()
         self.shared = nn.Sequential(
-            nn.Linear(state_dim, 128), nn.ReLU(),
-            nn.Linear(128, 64),        nn.ReLU(),
+            nn.Linear(state_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
         )
         self.policy_head = nn.Linear(64, action_dim)
-        self.value_head  = nn.Linear(64, 1)
+        self.value_head = nn.Linear(64, 1)
         self._lock = threading.Lock()
 
     def forward(self, x: torch.Tensor):
@@ -162,8 +168,7 @@ class A3CGlobalActor(nn.Module):
 class A3CWorker(threading.Thread):
     """One A3C worker thread per service group."""
 
-    def __init__(self, worker_id: int, global_actor: A3CGlobalActor,
-                 cfg: DQNConfig, env: "RateLimitEnv"):
+    def __init__(self, worker_id: int, global_actor: A3CGlobalActor, cfg: DQNConfig, env: "RateLimitEnv"):
         super().__init__(daemon=True)
         self.worker_id = worker_id
         self.global_actor = global_actor
@@ -194,8 +199,10 @@ class A3CWorker(threading.Thread):
                 action = dist.sample().item()
 
                 next_state, reward, done = self.env.step(action)
-                states.append(state); actions.append(action)
-                rewards.append(reward); values.append(value.item())
+                states.append(state)
+                actions.append(action)
+                rewards.append(reward)
+                values.append(value.item())
                 state = next_state
                 self.total_steps += 1
                 if done:
@@ -219,9 +226,9 @@ class A3CWorker(threading.Thread):
             log_probs = dist.log_prob(a_t)
             advantages = ret_t - vals.detach()
 
-            actor_loss  = -(log_probs * advantages).mean()
+            actor_loss = -(log_probs * advantages).mean()
             critic_loss = F.mse_loss(vals, ret_t)
-            entropy     = dist.entropy().mean()
+            entropy = dist.entropy().mean()
             loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy
 
             # Compute grads on local model
@@ -233,6 +240,7 @@ class A3CWorker(threading.Thread):
 
 
 # ─── Rate Limit Simulation Environment ────────────────────────────────────────
+
 
 class RateLimitEnv:
     def __init__(self, service_id: int, rng_seed: int = 0):
@@ -257,12 +265,14 @@ class RateLimitEnv:
 
         # Simulate environment response
         true_rps = 800 + 400 * np.sin(self.step_n / 200)
-        cpu_pct  = min(1.0, true_rps / (self.current_limit + 1))
-        error_r  = max(0, cpu_pct - 0.85) * 2
+        cpu_pct = min(1.0, true_rps / (self.current_limit + 1))
+        error_r = max(0, cpu_pct - 0.85) * 2
 
-        reward = (min(self.current_limit, true_rps) / 100          # throughput
-                  - error_r * 100                                    # penalise errors
-                  - max(0, cpu_pct - 0.90) * 1e9)                   # overload penalty
+        reward = (
+            min(self.current_limit, true_rps) / 100  # throughput
+            - error_r * 100  # penalise errors
+            - max(0, cpu_pct - 0.90) * 1e9
+        )  # overload penalty
 
         self.step_n += 1
         done = self.step_n >= 1000
@@ -270,21 +280,26 @@ class RateLimitEnv:
 
     def _observe(self) -> np.ndarray:
         true_rps = 800 + 400 * np.sin(self.step_n / 200)
-        cpu_pct  = min(1.0, true_rps / (self.current_limit + 1))
-        return np.array([
-            true_rps / 10000,
-            cpu_pct,
-            0.0,                             # queue (simplified)
-            max(0, cpu_pct - 0.85),          # error rate
-            cpu_pct * 200,                   # p99 estimate (ms)
-            self.current_limit / 10000,
-        ], dtype=np.float32)
+        cpu_pct = min(1.0, true_rps / (self.current_limit + 1))
+        return np.array(
+            [
+                true_rps / 10000,
+                cpu_pct,
+                0.0,  # queue (simplified)
+                max(0, cpu_pct - 0.85),  # error rate
+                cpu_pct * 200,  # p99 estimate (ms)
+                self.current_limit / 10000,
+            ],
+            dtype=np.float32,
+        )
 
 
 # ─── Training Entry Point ─────────────────────────────────────────────────────
 
+
 def train(cfg: Optional[DQNConfig] = None, output_dir: str = "models"):
     import os
+
     if cfg is None:
         cfg = DQNConfig(num_services=4)
     os.makedirs(output_dir, exist_ok=True)
@@ -293,15 +308,12 @@ def train(cfg: Optional[DQNConfig] = None, output_dir: str = "models"):
 
     # ── Per-service DQN agents ────────────────────────────────────────────────
     dqn_agents = [DQNServiceAgent(i, cfg) for i in range(cfg.num_services)]
-    dqn_envs   = [RateLimitEnv(i, rng_seed=i) for i in range(cfg.num_services)]
-    states     = [env.reset() for env in dqn_envs]
+    dqn_envs = [RateLimitEnv(i, rng_seed=i) for i in range(cfg.num_services)]
+    states = [env.reset() for env in dqn_envs]
 
     # ── Shared A3C global actor ───────────────────────────────────────────────
     global_actor = A3CGlobalActor(cfg.state_dim, cfg.action_dim)
-    workers = [
-        A3CWorker(i, global_actor, cfg, RateLimitEnv(i, rng_seed=100 + i))
-        for i in range(cfg.num_services)
-    ]
+    workers = [A3CWorker(i, global_actor, cfg, RateLimitEnv(i, rng_seed=100 + i)) for i in range(cfg.num_services)]
     for w in workers:
         w.start()
 
@@ -319,16 +331,17 @@ def train(cfg: Optional[DQNConfig] = None, output_dir: str = "models"):
 
     # ── Export ────────────────────────────────────────────────────────────────
     for i, agent in enumerate(dqn_agents):
-        torch.save(agent.policy_net.state_dict(),
-                   f"{output_dir}/dqn_service_{i}.pt")
+        torch.save(agent.policy_net.state_dict(), f"{output_dir}/dqn_service_{i}.pt")
 
     torch.save(global_actor.state_dict(), f"{output_dir}/a3c_global.pt")
 
     dummy = torch.zeros(1, cfg.state_dim)
     torch.onnx.export(
-        dqn_agents[0].policy_net, dummy,
+        dqn_agents[0].policy_net,
+        dummy,
         f"{output_dir}/dqn_rate_limiter.onnx",
-        input_names=["state"], output_names=["q_values"],
+        input_names=["state"],
+        output_names=["q_values"],
         opset_version=17,
     )
     print(f"DQN+A3C models saved to {output_dir}/")

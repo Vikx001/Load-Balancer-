@@ -37,12 +37,14 @@ import numpy as np
 # Result / violation types
 # ---------------------------------------------------------------------------
 
+
 class CBFResult(NamedTuple):
     """Detailed result from a CBF projection step."""
-    weights: np.ndarray    # projected weights, sums to 1
-    fired: list[bool]      # per-backend: True if CBF was active
-    iterations: int        # gradient descent iterations used
-    converged: bool        # True if all constraints satisfied before max_iter
+
+    weights: np.ndarray  # projected weights, sums to 1
+    fired: list[bool]  # per-backend: True if CBF was active
+    iterations: int  # gradient descent iterations used
+    converged: bool  # True if all constraints satisfied before max_iter
 
 
 @dataclass
@@ -58,6 +60,7 @@ class CBFViolation:
 # ---------------------------------------------------------------------------
 # CBFProjector — pure numpy, no torch required
 # ---------------------------------------------------------------------------
+
 
 class CBFProjector:
     """
@@ -158,7 +161,7 @@ class CBFProjector:
         iters = 0
 
         for it in range(self.max_iter):
-            h = caps - loads                      # h_i = cap_i - load_i
+            h = caps - loads  # h_i = cap_i - load_i
             violations = h < 0.0
             if not violations.any():
                 break
@@ -203,6 +206,7 @@ class CBFProjector:
 # SafetyMonitor — wraps CBFProjector with violation tracking
 # ---------------------------------------------------------------------------
 
+
 class SafetyMonitor:
     """
     Production wrapper around :class:`CBFProjector` that:
@@ -238,9 +242,7 @@ class SafetyMonitor:
 
         self._lock = threading.Lock()
         # Rolling violation flag history per backend
-        self._vhist: list[deque[int]] = [
-            deque(maxlen=history_len) for _ in range(n_backends)
-        ]
+        self._vhist: list[deque[int]] = [deque(maxlen=history_len) for _ in range(n_backends)]
         # Bounded event log
         self._vlog: deque[CBFViolation] = deque(maxlen=1000)
 
@@ -288,11 +290,7 @@ class SafetyMonitor:
                             backend_id=i,
                             load=float(loads[i]),
                             cap=self.projector.cap,
-                            weight_before=(
-                                float(weights[i]) / raw_total
-                                if raw_total > 1e-9
-                                else 0.0
-                            ),
+                            weight_before=(float(weights[i]) / raw_total if raw_total > 1e-9 else 0.0),
                             weight_after=float(result.weights[i]),
                         )
                     )
@@ -333,11 +331,7 @@ class SafetyMonitor:
     def audit(self) -> dict:
         """JSON-serialisable snapshot for monitoring / alerting endpoints."""
         with self._lock:
-            mean_iters = (
-                self._total_iters / self.total_projections
-                if self.total_projections > 0
-                else 0.0
-            )
+            mean_iters = self._total_iters / self.total_projections if self.total_projections > 0 else 0.0
         return {
             "total_projections": self.total_projections,
             "total_violations": self.total_violations,

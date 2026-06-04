@@ -182,8 +182,8 @@ lint: ## Run Go + Python linters
 
 lint-py: ## Lint + format-check Python with ruff
 	@command -v ruff >/dev/null 2>&1 || pip install ruff -q
-	ruff check --output-format=concise demo/ ml/ tests/ dashboard/
-	ruff format --check demo/ ml/ tests/ dashboard/
+	ruff check --output-format=concise demo/ desktop/ ml/ scripts/ tests/ dashboard/
+	ruff format --check demo/ desktop/ ml/ scripts/ tests/ dashboard/
 
 test: ## Run Go unit tests (with race detector)
 	cd $(GO_DIR) && go test ./... -race -timeout 60s

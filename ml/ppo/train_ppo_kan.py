@@ -25,6 +25,7 @@ from torch.optim import Adam
 
 # ─── Hyperparameters ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class PPOConfig:
     # Environment
@@ -35,7 +36,7 @@ class PPOConfig:
     lr_actor: float = 3e-4
     lr_critic: float = 3e-4
     gamma: float = 0.99
-    lam: float = 0.95          # GAE lambda
+    lam: float = 0.95  # GAE lambda
     clip_eps: float = 0.2
     vf_coef: float = 0.5
     ent_coef: float = 0.01
@@ -45,8 +46,8 @@ class PPOConfig:
     rollout_steps: int = 2048
 
     # KAN
-    kan_spline_order: int = 3   # cubic B-spline
-    kan_grid_size: int = 5      # grid points per spline
+    kan_spline_order: int = 3  # cubic B-spline
+    kan_grid_size: int = 5  # grid points per spline
 
     # Training
     total_steps: int = 1_000_000
@@ -57,9 +58,9 @@ class PPOConfig:
     capacity_cap: float = 0.80
 
     # Reward weights (α, β, γ, δ)
-    alpha: float = 0.5   # latency
-    beta: float = 0.3    # variance
-    gamma_r: float = 0.2 # throughput
+    alpha: float = 0.5  # latency
+    beta: float = 0.3  # variance
+    gamma_r: float = 0.2  # throughput
     delta: float = 1000  # violation penalty
 
     def __post_init__(self):
@@ -68,6 +69,7 @@ class PPOConfig:
 
 # ─── KAN Layer: B-spline activations on edges ─────────────────────────────────
 
+
 class KANLayer(nn.Module):
     """
     One layer of a Kolmogorov-Arnold Network.
@@ -75,8 +77,7 @@ class KANLayer(nn.Module):
     Nodes sum their inputs: output_j = Σ_i φ_{ij}(x_i).
     """
 
-    def __init__(self, in_features: int, out_features: int,
-                 grid_size: int = 5, spline_order: int = 3):
+    def __init__(self, in_features: int, out_features: int, grid_size: int = 5, spline_order: int = 3):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -87,9 +88,7 @@ class KANLayer(nn.Module):
         # Shape: (out_features, in_features, grid_size + spline_order)
         # Number of basis functions = grid_size + spline_order
         n_coeff = grid_size + spline_order
-        self.coeff = nn.Parameter(
-            torch.randn(out_features, in_features, n_coeff) * 0.1
-        )
+        self.coeff = nn.Parameter(torch.randn(out_features, in_features, n_coeff) * 0.1)
         # Residual linear (SiLU-activated) for training stability
         self.residual = nn.Linear(in_features, out_features, bias=True)
         # Scale of residual vs spline contribution
@@ -99,11 +98,13 @@ class KANLayer(nn.Module):
         # Interior: grid_size+1 points from -1 to 1
         # Pad spline_order knots on each side → total = grid_size + 1 + 2*spline_order
         interior = torch.linspace(-1, 1, grid_size + 1)
-        grid = torch.cat([
-            interior[0].expand(spline_order),
-            interior,
-            interior[-1].expand(spline_order),
-        ])
+        grid = torch.cat(
+            [
+                interior[0].expand(spline_order),
+                interior,
+                interior[-1].expand(spline_order),
+            ]
+        )
         self.register_buffer("grid", grid)
         self._n_coeff = n_coeff
 
@@ -115,7 +116,7 @@ class KANLayer(nn.Module):
         Returns: (batch, in_features, grid_size + spline_order)
         """
         x = x.unsqueeze(-1)  # (batch, in, 1)
-        grid = self.grid     # length = grid_size + 1 + 2*spline_order
+        grid = self.grid  # length = grid_size + 1 + 2*spline_order
 
         # Order-0 basis over all knot intervals
         basis = ((x >= grid[:-1]) & (x < grid[1:])).float()
@@ -123,24 +124,24 @@ class KANLayer(nn.Module):
         # non-degenerate interval (index n_coeff-1), not the degenerate trailing ones.
         last_proper = self._n_coeff - 1
         at_right = (x == grid[-1]).float()  # (batch, in, 1)
-        basis[..., last_proper:last_proper+1] = (
-            basis[..., last_proper:last_proper+1] + at_right
-        )
+        basis[..., last_proper : last_proper + 1] = basis[..., last_proper : last_proper + 1] + at_right
 
         # Cox-de Boor recursion — produces n_coeff = grid_size + spline_order functions
         for k in range(1, self.spline_order + 1):
             n = basis.shape[-1] - 1  # number of output functions at this level
-            lg = grid[:n + 1]   # left knot endpoints
-            rg = grid[k:k + n + 1]  # right knot endpoints
+            lg = grid[: n + 1]  # left knot endpoints
+            rg = grid[k : k + n + 1]  # right knot endpoints
             dl = rg[:-1] - lg[:-1]
-            dr = rg[1:]  - lg[1:]
+            dr = rg[1:] - lg[1:]
             # Standard B-spline convention: 0/0 = 0 (degenerate knot spans → zero term)
-            left  = torch.where(dl.abs() > 1e-10,
-                                (x - lg[:-1]) / dl.clamp(min=1e-10) * basis[..., :n],
-                                torch.zeros_like(basis[..., :n]))
-            right = torch.where(dr.abs() > 1e-10,
-                                (rg[1:] - x)  / dr.clamp(min=1e-10) * basis[..., 1:n + 1],
-                                torch.zeros_like(basis[..., 1:n + 1]))
+            left = torch.where(
+                dl.abs() > 1e-10, (x - lg[:-1]) / dl.clamp(min=1e-10) * basis[..., :n], torch.zeros_like(basis[..., :n])
+            )
+            right = torch.where(
+                dr.abs() > 1e-10,
+                (rg[1:] - x) / dr.clamp(min=1e-10) * basis[..., 1 : n + 1],
+                torch.zeros_like(basis[..., 1 : n + 1]),
+            )
             basis = left + right
 
         return basis  # (batch, in, grid_size + spline_order)
@@ -161,6 +162,7 @@ class KANLayer(nn.Module):
 
 
 # ─── KAN Actor (Layer 3): interpretable routing policy ─────────────────────
+
 
 class KANActor(nn.Module):
     """
@@ -232,12 +234,17 @@ class KANActor(nn.Module):
 
 # ─── MLP Critic ───────────────────────────────────────────────────────────────
 
+
 class MLPCritic(nn.Module):
     def __init__(self, state_dim: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim, 256), nn.LayerNorm(256), nn.GELU(),
-            nn.Linear(256, 128),        nn.LayerNorm(128), nn.GELU(),
+            nn.Linear(state_dim, 256),
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Linear(256, 128),
+            nn.LayerNorm(128),
+            nn.GELU(),
             nn.Linear(128, 1),
         )
 
@@ -247,9 +254,15 @@ class MLPCritic(nn.Module):
 
 # ─── CBF Projection ───────────────────────────────────────────────────────────
 
-def cbf_project(weights: torch.Tensor, loads: torch.Tensor,
-                lam: float = 0.5, cap: float = 0.80,
-                lr: float = 0.05, max_iter: int = 200) -> torch.Tensor:
+
+def cbf_project(
+    weights: torch.Tensor,
+    loads: torch.Tensor,
+    lam: float = 0.5,
+    cap: float = 0.80,
+    lr: float = 0.05,
+    max_iter: int = 200,
+) -> torch.Tensor:
     """
     Project weights onto safe region via projected gradient descent.
     h_i(x) = cap - load_i ≥ 0 for all i.
@@ -261,7 +274,7 @@ def cbf_project(weights: torch.Tensor, loads: torch.Tensor,
     for _ in range(max_iter):
         # h_i = cap - (load_i + w_i) → safe if > 0
         h = cap - (loads + w)
-        violated = (h < 0)
+        violated = h < 0
         if not violated.any():
             break
 
@@ -279,7 +292,7 @@ def simplex_project(v: torch.Tensor) -> torch.Tensor:
     n = v.shape[-1]
     u, _ = torch.sort(v, dim=-1, descending=True)
     cssv = u.cumsum(dim=-1)
-    rho = (u - (cssv - 1) / torch.arange(1, n + 1, device=v.device).float() > 0)
+    rho = u - (cssv - 1) / torch.arange(1, n + 1, device=v.device).float() > 0
     rho_idx = rho.long().sum(dim=-1, keepdim=True) - 1
     theta = (cssv.gather(-1, rho_idx) - 1) / (rho_idx.float() + 1)
     return (v - theta).clamp(min=0)
@@ -287,18 +300,23 @@ def simplex_project(v: torch.Tensor) -> torch.Tensor:
 
 # ─── Rollout Buffer ───────────────────────────────────────────────────────────
 
+
 @dataclass
 class RolloutBuffer:
-    states:   list = field(default_factory=list)
-    actions:  list = field(default_factory=list)
-    rewards:  list = field(default_factory=list)
-    values:   list = field(default_factory=list)
+    states: list = field(default_factory=list)
+    actions: list = field(default_factory=list)
+    rewards: list = field(default_factory=list)
+    values: list = field(default_factory=list)
     log_probs: list = field(default_factory=list)
-    dones:    list = field(default_factory=list)
+    dones: list = field(default_factory=list)
 
     def clear(self):
-        self.states.clear(); self.actions.clear(); self.rewards.clear()
-        self.values.clear(); self.log_probs.clear(); self.dones.clear()
+        self.states.clear()
+        self.actions.clear()
+        self.rewards.clear()
+        self.values.clear()
+        self.log_probs.clear()
+        self.dones.clear()
 
     def compute_gae(self, gamma: float, lam: float, last_value: float) -> tuple:
         """Compute GAE advantages and returns."""
@@ -306,7 +324,7 @@ class RolloutBuffer:
         advantages = []
         gae = 0.0
         for t in reversed(range(len(self.rewards))):
-            delta = self.rewards[t] + gamma * values[t+1] * (1 - self.dones[t]) - values[t]
+            delta = self.rewards[t] + gamma * values[t + 1] * (1 - self.dones[t]) - values[t]
             gae = delta + gamma * lam * (1 - self.dones[t]) * gae
             advantages.insert(0, gae)
         returns = [a + v for a, v in zip(advantages, self.values)]
@@ -315,12 +333,13 @@ class RolloutBuffer:
 
 # ─── PPO Trainer ──────────────────────────────────────────────────────────────
 
+
 class PPOTrainer:
     def __init__(self, cfg: PPOConfig):
         self.cfg = cfg
-        self.actor  = KANActor(cfg)
+        self.actor = KANActor(cfg)
         self.critic = MLPCritic(cfg.state_dim)
-        self.opt_actor  = Adam(self.actor.parameters(),  lr=cfg.lr_actor)
+        self.opt_actor = Adam(self.actor.parameters(), lr=cfg.lr_actor)
         self.opt_critic = Adam(self.critic.parameters(), lr=cfg.lr_critic)
         self.buffer = RolloutBuffer()
         self.prev_weights = None
@@ -330,7 +349,7 @@ class PPOTrainer:
         state_t = torch.FloatTensor(state).unsqueeze(0)
         with torch.no_grad():
             weights = self.actor(state_t).squeeze(0)
-            value   = self.critic(state_t).item()
+            value = self.critic(state_t).item()
 
         # Action smoothing (prevents thundering herd)
         if self.prev_weights is not None:
@@ -346,25 +365,19 @@ class PPOTrainer:
         log_prob = dist.log_prob(action).item()
         return action.numpy(), log_prob, value
 
-    def compute_reward(self, p99_ms: float, load_variance: float,
-                       throughput: float, violations: int) -> float:
+    def compute_reward(self, p99_ms: float, load_variance: float, throughput: float, violations: int) -> float:
         cfg = self.cfg
-        r = (-cfg.alpha * p99_ms
-             - cfg.beta  * load_variance
-             + cfg.gamma_r * throughput
-             - cfg.delta  * violations)
+        r = -cfg.alpha * p99_ms - cfg.beta * load_variance + cfg.gamma_r * throughput - cfg.delta * violations
         return r
 
     def update(self):
         """One PPO update cycle (10 epochs over rollout buffer)."""
-        adv, ret = self.buffer.compute_gae(
-            self.cfg.gamma, self.cfg.lam, last_value=0.0
-        )
-        states    = torch.FloatTensor(np.array(self.buffer.states))
-        actions   = torch.FloatTensor(np.array(self.buffer.actions))
-        old_lp    = torch.FloatTensor(self.buffer.log_probs)
+        adv, ret = self.buffer.compute_gae(self.cfg.gamma, self.cfg.lam, last_value=0.0)
+        states = torch.FloatTensor(np.array(self.buffer.states))
+        actions = torch.FloatTensor(np.array(self.buffer.actions))
+        old_lp = torch.FloatTensor(self.buffer.log_probs)
         advantages = torch.FloatTensor(adv)
-        returns    = torch.FloatTensor(ret)
+        returns = torch.FloatTensor(ret)
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         n = len(states)
@@ -373,7 +386,7 @@ class PPOTrainer:
         for _ in range(self.cfg.update_epochs):
             np.random.shuffle(idx)
             for start in range(0, n, self.cfg.batch_size):
-                batch = idx[start:start + self.cfg.batch_size]
+                batch = idx[start : start + self.cfg.batch_size]
                 bs, ba = states[batch], actions[batch]
                 bold_lp, badv, bret = old_lp[batch], advantages[batch], returns[batch]
 
@@ -430,6 +443,7 @@ class PPOTrainer:
 
 # ─── Load Balancer Simulation Environment ─────────────────────────────────────
 
+
 class LBSimEnv:
     """
     Simulated load balancer environment for offline PPO training.
@@ -465,10 +479,12 @@ class LBSimEnv:
         variance = float(np.var(load_fracs))
         violations = int(np.any(load_fracs > 1.0))
 
-        reward = (-self.cfg.alpha * p99_ms
-                  - self.cfg.beta * variance * 100
-                  + self.cfg.gamma_r * total_rps / 10
-                  - self.cfg.delta * violations)
+        reward = (
+            -self.cfg.alpha * p99_ms
+            - self.cfg.beta * variance * 100
+            + self.cfg.gamma_r * total_rps / 10
+            - self.cfg.delta * violations
+        )
 
         self.step_count += 1
         done = self.step_count >= 2048
@@ -483,27 +499,30 @@ class LBSimEnv:
         per_server = []
         for i in range(self.n):
             cpu = self.loads[i] / self.capacities[i]
-            per_server.extend([
-                cpu,                              # cpu_utilisation
-                float(self.loads[i]),             # active_connections
-                max(0, float(self.loads[i] - 50)), # queue_depth
-                cpu * 100,                        # ewma_latency_ms
-                float(self.loads[i] * 1024),      # tx_bytes_per_sec
-                float(self.loads[i] * 512),       # rx_bytes_per_sec
-                1.0,                              # health_status
-                max(0, (cpu - 0.8) * 0.5),        # error_rate_1m
-            ])
+            per_server.extend(
+                [
+                    cpu,  # cpu_utilisation
+                    float(self.loads[i]),  # active_connections
+                    max(0, float(self.loads[i] - 50)),  # queue_depth
+                    cpu * 100,  # ewma_latency_ms
+                    float(self.loads[i] * 1024),  # tx_bytes_per_sec
+                    float(self.loads[i] * 512),  # rx_bytes_per_sec
+                    1.0,  # health_status
+                    max(0, (cpu - 0.8) * 0.5),  # error_rate_1m
+                ]
+            )
         t = self.step_count / 2000
         global_feats = [
-            sum(self.loads),                      # total_rps
-            max(self.loads / self.capacities) * 200, # p99_latency_ms
-            math.sin(2 * math.pi * t),            # time_sin
-            math.cos(2 * math.pi * t),            # time_cos
+            sum(self.loads),  # total_rps
+            max(self.loads / self.capacities) * 200,  # p99_latency_ms
+            math.sin(2 * math.pi * t),  # time_sin
+            math.cos(2 * math.pi * t),  # time_cos
         ]
         return np.array(per_server + global_feats, dtype=np.float32)
 
 
 # ─── Training Entry Point ─────────────────────────────────────────────────────
+
 
 def train(cfg: Optional[PPOConfig] = None, output_dir: str = "models"):
     if cfg is None:
@@ -525,10 +544,9 @@ def train(cfg: Optional[PPOConfig] = None, output_dir: str = "models"):
             action, log_prob, value = trainer.select_action(state)
 
             # CBF projection (training-time safety enforcement)
-            loads_t = torch.FloatTensor(state[:cfg.num_backends * 8:8]).unsqueeze(0)
+            loads_t = torch.FloatTensor(state[: cfg.num_backends * 8 : 8]).unsqueeze(0)
             action_t = torch.FloatTensor(action).unsqueeze(0)
-            safe_action = cbf_project(action_t, loads_t,
-                                      lam=cfg.cbf_lambda, cap=cfg.capacity_cap)
+            safe_action = cbf_project(action_t, loads_t, lam=cfg.cbf_lambda, cap=cfg.capacity_cap)
             safe_action_np = safe_action.squeeze(0).numpy()
 
             next_state, reward, done = env.step(safe_action_np)
@@ -558,11 +576,14 @@ def train(cfg: Optional[PPOConfig] = None, output_dir: str = "models"):
     trainer.write_audit_log("v1.0", f"{output_dir}/kan_audit.log")
 
     # Save PyTorch checkpoint
-    torch.save({
-        "actor": trainer.actor.state_dict(),
-        "critic": trainer.critic.state_dict(),
-        "config": cfg,
-    }, f"{output_dir}/ppo_kan_checkpoint.pt")
+    torch.save(
+        {
+            "actor": trainer.actor.state_dict(),
+            "critic": trainer.critic.state_dict(),
+            "config": cfg,
+        },
+        f"{output_dir}/ppo_kan_checkpoint.pt",
+    )
 
     return trainer
 
