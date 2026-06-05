@@ -84,7 +84,7 @@ Note: the default local developer path is the Python demo/runtime stack. The
 fully real Go control plane plus eBPF data plane requires a Linux host with the
 kernel and privilege model described below in "Production Runtime On Linux".
 
-No Docker. No Kubernetes. No cloud account. Just Python 3.11+.
+No Docker. No Kubernetes. No cloud account. Just Python 3.13+.
 
 ---
 
@@ -210,7 +210,7 @@ The dashboard auto-detects the running proxy and switches to **LIVE** mode (gree
 
 ## Quick start (standalone, no Linux required)
 
-You only need **Python 3.11+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
+You only need **Python 3.13+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
 
 ### Desktop app (no terminal workflow, recommended)
 
