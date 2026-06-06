@@ -24,7 +24,7 @@ OBS_STAGE_GRAFANA_DASHBOARD := $(OBS_STAGE_GRAFANA_DASHBOARDS)/omegalb-observabi
 	desktop-run desktop-build-macos desktop-build-windows \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
-        smoke reset dev health check clean download-model
+        smoke reset dev health check clean daily-check download-model
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -261,5 +261,5 @@ clean: ## Remove build artifacts
 daily-check: ## Quick daily check: run lightweight Python lint and unit test
 	@echo "  [daily] running quick Python checks"
 	@command -v ruff >/dev/null 2>&1 || pip install ruff -q
-	ruff check --output-format=concise tests/ dashboard/ demo/ ml/ || true
+	ruff check --output-format=concise tests/ dashboard/ demo/ desktop/ ml/ scripts/
 	python -m pytest tests/test_proxy_unit.py -q
