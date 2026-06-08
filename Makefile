@@ -3,6 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 REGISTRY    ?= omega-lb
+# Version falls back to "dev" when git metadata is unavailable (e.g. in minimal CI/checkouts)
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 IMAGE       := $(REGISTRY)/omega-lb:$(VERSION)
 DOCKER_COMPOSE := $(shell if command -v docker-compose >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
@@ -13,6 +14,7 @@ BENCH_DIR   := bench
 EBPF_DIR    := ebpf/kern
 DEPLOY_DIR  := deploy
 OBS_STAGE_ROOT := $(HOME)/.omegalb-observability
+# Local observability stack staging paths used by observability-demo and observability-local targets
 OBS_STAGE_MONITORING := $(OBS_STAGE_ROOT)/monitoring
 OBS_STAGE_SCRIPTS := $(OBS_STAGE_ROOT)/scripts
 OBS_STAGE_GRAFANA := $(OBS_STAGE_ROOT)/grafana
@@ -21,7 +23,7 @@ OBS_STAGE_GRAFANA_DASHBOARDS := $(OBS_STAGE_GRAFANA)/dashboards
 OBS_STAGE_GRAFANA_DASHBOARD := $(OBS_STAGE_GRAFANA_DASHBOARDS)/omegalb-observability.json
 
 .PHONY: help build build-ebpf build-go docker-build docker-run docker-demo observability-demo observability-local \
-	desktop-run desktop-build-macos desktop-build-windows \
+	desktop-run desktop-build-macos desktop-build-windows desktop-clean \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
         smoke reset dev health check clean daily-check download-model
@@ -98,6 +100,9 @@ desktop-build-macos: ## Build macOS app bundle (.app)
 
 desktop-build-windows: ## Build Windows executable (.exe) from PowerShell
 	@echo "Run in PowerShell: powershell -ExecutionPolicy Bypass -File desktop/build_windows.ps1"
+
+desktop-clean: ## Remove desktop virtualenv created by desktop-run
+	rm -rf .venv-desktop
 
 # ─── ML Training ──────────────────────────────────────────────────────────────
 
@@ -251,7 +256,7 @@ download-model: ## Download pre-trained ONNX models from GitHub Releases
 # ─── Clean ────────────────────────────────────────────────────────────────────
 
 clean: ## Remove build artifacts
-	rm -rf bin/ $(EBPF_DIR)/*.bpf.o
+	rm -rf bin/ .venv-desktop $(EBPF_DIR)/*.bpf.o
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
 
