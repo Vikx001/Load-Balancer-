@@ -1,5 +1,6 @@
 # ─── Omega-LB Makefile ────────────────────────────────────────────────────────
 SHELL := /bin/bash
+SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
 REGISTRY    ?= omega-lb
