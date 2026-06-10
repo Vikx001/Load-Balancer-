@@ -1,6 +1,7 @@
 # ─── Omega-LB Makefile ────────────────────────────────────────────────────────
 SHELL := /bin/bash
 SHELLFLAGS := -eu -o pipefail -c
+MAKEFLAGS += --warn-undefined-variables
 .DEFAULT_GOAL := help
 
 REGISTRY    ?= omega-lb
@@ -27,7 +28,7 @@ OBS_STAGE_GRAFANA_DASHBOARD := $(OBS_STAGE_GRAFANA_DASHBOARDS)/omegalb-observabi
 	desktop-run desktop-build-macos desktop-build-windows desktop-clean \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
-        smoke reset dev health check clean daily-check download-model
+        smoke reset dev health check ci clean daily-check download-model
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -219,6 +220,10 @@ dev: ## Start full demo stack (4 backends + proxy + dashboard)
 	python demo/run.py
 
 check: lint-py test-ml smoke ## Full local quality gate (lint + unit + smoke)
+
+ci: check ## Alias for CI-style local quality gate
+	@echo "  [ci] running local CI quality gate"
+	$(MAKE) check
 
 smoke-train: ## Smoke-test training pipelines (1 000 steps each, no GPU needed)
 	python -c "\
