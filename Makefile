@@ -28,7 +28,7 @@ OBS_STAGE_GRAFANA_DASHBOARD := $(OBS_STAGE_GRAFANA_DASHBOARDS)/omegalb-observabi
 	desktop-run desktop-build-macos desktop-build-windows desktop-clean \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
-        smoke reset dev health check ci clean daily-check download-model
+        smoke reset dev health check ci clean distclean daily-check download-model
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -265,6 +265,10 @@ clean: ## Remove build artifacts
 	rm -rf bin/ .venv-desktop $(EBPF_DIR)/*.bpf.o
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
+
+distclean: clean ## Remove all generated and downloaded artifacts (aggressive cleanup)
+	rm -rf .venv ml/models outputs/ /tmp/omega_smoke_models 2>/dev/null || true
+	find . -type d -name ".venv*" -exec rm -rf {} + 2>/dev/null || true
 
 # Quick daily check target: runs a lightweight lint + unit test for fast verification
 .PHONY: daily-check
