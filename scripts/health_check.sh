@@ -5,6 +5,7 @@
 # Probes every component of the demo stack and prints a status table.
 # Designed to be run at any time (even when the stack is not running) to
 # quickly see what is alive and what needs attention.
+# This script is diagnostic only and does not modify any service state.
 #
 # Exit codes:
 #   0 — all probed services are healthy
@@ -15,7 +16,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit
 
 METRICS_FILE="demo/live_metrics.json"
 PROXY_PORT="${OMEGA_LB_PORT:-8080}"
