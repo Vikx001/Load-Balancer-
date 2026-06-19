@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch: {}
 
 # Cancel in-flight runs for the same branch on new pushes
 concurrency:
