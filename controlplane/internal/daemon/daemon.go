@@ -16,9 +16,9 @@ import (
 	"github.com/omega-lb/omega-lb/internal/health"
 	"github.com/omega-lb/omega-lb/internal/metrics"
 	"github.com/omega-lb/omega-lb/internal/observability"
-	"github.com/omega-lb/omega-lb/internal/rl"
-	"github.com/omega-lb/omega-lb/internal/ring"
 	"github.com/omega-lb/omega-lb/internal/ratelimit"
+	"github.com/omega-lb/omega-lb/internal/ring"
+	"github.com/omega-lb/omega-lb/internal/rl"
 	"github.com/omega-lb/omega-lb/internal/telemetry"
 	"github.com/omega-lb/omega-lb/internal/xds"
 )
@@ -30,7 +30,7 @@ type Daemon struct {
 	stage     int
 	ring      *ring.Manager
 	rl        *rl.Agent
-	rl_dqn    *ratelimit.DQNAgent
+	dqnAgent  *ratelimit.DQNAgent
 	health    *health.Checker
 	metrics   *metrics.Collector
 	telem     *telemetry.Exporter
@@ -228,7 +228,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 		stage:     stage,
 		ring:      rm,
 		rl:        agent,
-		rl_dqn:    dqn,
+		dqnAgent:  dqn,
 		health:    hc,
 		metrics:   mc,
 		telem:     te,
@@ -296,8 +296,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	// Stage 5: Rate-limit control loop
-	if d.rl_dqn != nil {
-		g.Go(func() error { return d.rl_dqn.Run(ctx) })
+	if d.dqnAgent != nil {
+		g.Go(func() error { return d.dqnAgent.Run(ctx) })
 	}
 
 	// Stage 2+: Proactive pre-distribution loop (requires metrics for prediction)
@@ -322,4 +322,3 @@ func (d *Daemon) runProactiveLoop(ctx context.Context) error {
 		}
 	}
 }
-
