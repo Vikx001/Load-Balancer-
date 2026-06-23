@@ -3,21 +3,22 @@
 // ─── WHY SREs NEED THIS DURING INCIDENTS ─────────────────────────────────────
 // At 3am, paged for a latency spike, an SRE faces a black box:
 //
-//   "The load balancer is routing 60% of traffic to backend-3.
-//    Backend-3 is saturated.  Why?"
+//	"The load balancer is routing 60% of traffic to backend-3.
+//	 Backend-3 is saturated.  Why?"
 //
 // Without explainability:
-//   • The RL agent's decision log is in zap.Debug level — not visible at runtime
-//   • The RL weight vector is in memory, unreachable without a debugger
-//   • The only option is to kill the process, losing all routing state
+//   - The RL agent's decision log is in zap.Debug level — not visible at runtime
+//   - The RL weight vector is in memory, unreachable without a debugger
+//   - The only option is to kill the process, losing all routing state
 //
 // With this admin server:
-//   $ curl http://localhost:9000/admin/explain/recent | jq '.[-1]'
-//   → { backend_id: 3, reason: "normal", vnodes_at_select: 122, probe_idx: 0 }
-//   $ curl http://localhost:9000/admin/mode   # check current mode
-//   $ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"ASSISTED"}'  # bypass RL
-//   $ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"MANUAL","weights":[0.33,0.33,0.34]}'
-//   $ curl http://localhost:9000/admin/healthz  # confirm daemon is alive
+//
+//	$ curl http://localhost:9000/admin/explain/recent | jq '.[-1]'
+//	→ { backend_id: 3, reason: "normal", vnodes_at_select: 122, probe_idx: 0 }
+//	$ curl http://localhost:9000/admin/mode   # check current mode
+//	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"ASSISTED"}'  # bypass RL
+//	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"MANUAL","weights":[0.33,0.33,0.34]}'
+//	$ curl http://localhost:9000/admin/healthz  # confirm daemon is alive
 //
 // ─── SECURITY NOTE ───────────────────────────────────────────────────────────
 // This server MUST be bound to a private/loopback interface (:9000 by default).
@@ -31,6 +32,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -54,6 +56,18 @@ type Server struct {
 
 // NewServer creates an admin HTTP server.
 // recorder, agent, ring, and coordinator may be nil if those subsystems are disabled.
+const (
+	contentTypeJSON       = "application/json"
+	defaultRecentHistory  = 100
+	maxRecentHistory      = 1000
+	defaultBackendHistory = 50
+	maxBackendHistory     = 500
+)
+
+type apiError struct {
+	Error string `json:"error"`
+}
+
 func NewServer(
 	addr string,
 	recorder *observability.FlightRecorder,
@@ -70,6 +84,48 @@ func NewServer(
 		coordinator: coord,
 		log:         log,
 	}
+}
+
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", contentTypeJSON)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(status)
+	writeJSON(w, apiError{Error: message})
+}
+
+func (s *Server) checkMethod(w http.ResponseWriter, r *http.Request, allowed string) bool {
+	if r.Method != allowed {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
+func parsePositiveInt(values url.Values, key string, defaultValue, maxValue int) int {
+	if v := values.Get(key); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			if parsed > maxValue {
+				return maxValue
+			}
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func parseUint32(values url.Values, key string) (uint32, error) {
+	idStr := values.Get(key)
+	if idStr == "" {
+		return 0, fmt.Errorf("missing query param: %s", key)
+	}
+	idParsed, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: must be uint32", key)
+	}
+	return uint32(idParsed), nil
 }
 
 // Run starts the admin HTTP server and blocks until ctx is cancelled.
@@ -111,12 +167,10 @@ func (s *Server) Run(ctx context.Context) error {
 // ─── GET /admin/healthz ───────────────────────────────────────────────────────
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, map[string]string{
 		"status": "ok",
 		"time":   time.Now().UTC().Format(time.RFC3339Nano),
 	})
@@ -135,15 +189,7 @@ func (s *Server) handleExplainRecent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	n := 100
-	if v := r.URL.Query().Get("n"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			n = parsed
-		}
-	}
-	if n > 1000 {
-		n = 1000 // cap to avoid large response payloads
-	}
+	n := parsePositiveInt(r.URL.Query(), "n", defaultRecentHistory, maxRecentHistory)
 	if s.recorder == nil {
 		http.Error(w, "flight recorder not available", http.StatusServiceUnavailable)
 		return
@@ -162,36 +208,21 @@ func (s *Server) handleExplainRecent(w http.ResponseWriter, r *http.Request) {
 //   $ curl 'http://localhost:9000/admin/explain/backend?id=3&n=20' | jq '.'
 
 func (s *Server) handleExplainBackend(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
 	if s.recorder == nil {
 		http.Error(w, "flight recorder not available", http.StatusServiceUnavailable)
 		return
 	}
-	idStr := r.URL.Query().Get("id")
-	if idStr == "" {
-		http.Error(w, "missing query param: id", http.StatusBadRequest)
-		return
-	}
-	idParsed, err := strconv.ParseUint(idStr, 10, 32)
+	id, err := parseUint32(r.URL.Query(), "id")
 	if err != nil {
-		http.Error(w, "invalid id: must be uint32", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	n := 50
-	if v := r.URL.Query().Get("n"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			n = parsed
-		}
-	}
-	if n > 500 {
-		n = 500
-	}
-	decisions := s.recorder.ForBackend(uint32(idParsed), n)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(decisions)
+	n := parsePositiveInt(r.URL.Query(), "n", defaultBackendHistory, maxBackendHistory)
+	decisions := s.recorder.ForBackend(id, n)
+	writeJSON(w, decisions)
 }
 
 // ─── GET/POST /admin/mode ─────────────────────────────────────────────────────
@@ -313,25 +344,24 @@ func modeString(m rl.AgentMode) string {
 //   $ curl http://localhost:9000/admin/ring | jq '.backends[] | {name: .id, vnodes, weight_pct, healthy}'
 
 type ringBackendInfo struct {
-	ID        uint32  `json:"id"`
-	IP        string  `json:"ip"`
-	Port      uint16  `json:"port"`
-	Vnodes    int     `json:"vnodes"`
-	WeightPct float64 `json:"weight_pct"` // percentage of total vnodes
-	Healthy   bool    `json:"healthy"`
-	Stateful  bool    `json:"stateful"`
-	ActiveReqs int64  `json:"active_reqs"`
+	ID         uint32  `json:"id"`
+	IP         string  `json:"ip"`
+	Port       uint16  `json:"port"`
+	Vnodes     int     `json:"vnodes"`
+	WeightPct  float64 `json:"weight_pct"` // percentage of total vnodes
+	Healthy    bool    `json:"healthy"`
+	Stateful   bool    `json:"stateful"`
+	ActiveReqs int64   `json:"active_reqs"`
 }
 
 type ringResponse struct {
-	Backends    []ringBackendInfo `json:"backends"`
-	TotalVnodes int               `json:"total_vnodes"`
-	BackendCount int              `json:"backend_count"`
+	Backends     []ringBackendInfo `json:"backends"`
+	TotalVnodes  int               `json:"total_vnodes"`
+	BackendCount int               `json:"backend_count"`
 }
 
 func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
 	if s.ring == nil {
@@ -384,8 +414,7 @@ func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
 //   → {"node_id":"node-1","is_leader":true,"last_applied_version":1716000000000,"store_type":"memory"}
 
 func (s *Server) handleConsensus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
 	if s.coordinator == nil {
