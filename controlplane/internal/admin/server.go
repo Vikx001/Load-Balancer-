@@ -22,18 +22,24 @@
 //
 // ─── SECURITY NOTE ───────────────────────────────────────────────────────────
 // This server MUST be bound to a private/loopback interface (:9000 by default).
-// It is NOT authenticated and must NEVER be exposed to the internet.
-// In Kubernetes: use a NetworkPolicy or an authenticated reverse proxy.
-// In baremetal: bind to 127.0.0.1 or a management VPC NIC only.
+// Set admin.token in config (or the OMEGA_ADMIN_TOKEN env var) to require a
+// "X-Omega-Admin-Token: <token>" or "Authorization: Bearer <token>" header on
+// every endpoint except /admin/healthz. If no token is configured, the API
+// runs UNAUTHENTICATED and must NEVER be exposed beyond a trusted network.
+// In Kubernetes: use a NetworkPolicy or an authenticated reverse proxy in
+// addition to the token. In baremetal: bind to 127.0.0.1 or a management VPC
+// NIC only.
 package admin
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -51,17 +57,22 @@ type Server struct {
 	agent       *rl.Agent
 	ring        *ring.Manager
 	coordinator *consensus.Coordinator
+	token       string
 	log         *zap.Logger
 }
 
 // NewServer creates an admin HTTP server.
 // recorder, agent, ring, and coordinator may be nil if those subsystems are disabled.
+// token, if non-empty, is required (via "X-Omega-Admin-Token" or "Authorization: Bearer"
+// header) on every endpoint except /admin/healthz. Leaving token empty runs the API
+// unauthenticated — only safe when bound to a loopback/private interface.
 const (
 	contentTypeJSON       = "application/json"
 	defaultRecentHistory  = 100
 	maxRecentHistory      = 1000
 	defaultBackendHistory = 50
 	maxBackendHistory     = 500
+	adminTokenHeader      = "X-Omega-Admin-Token"
 )
 
 type apiError struct {
@@ -74,6 +85,7 @@ func NewServer(
 	agent *rl.Agent,
 	rm *ring.Manager,
 	coord *consensus.Coordinator,
+	token string,
 	log *zap.Logger,
 ) *Server {
 	return &Server{
@@ -82,7 +94,37 @@ func NewServer(
 		agent:       agent,
 		ring:        rm,
 		coordinator: coord,
+		token:       token,
 		log:         log,
+	}
+}
+
+// requestToken extracts the admin token from either the dedicated header or
+// a standard "Authorization: Bearer <token>" header.
+func requestToken(r *http.Request) string {
+	if t := r.Header.Get(adminTokenHeader); t != "" {
+		return t
+	}
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return strings.TrimSpace(auth[len("bearer "):])
+	}
+	return ""
+}
+
+// requireAuth wraps a handler so it 401s unless the caller presents a token
+// matching s.token. Comparison is constant-time to avoid timing side-channels.
+// If s.token is empty, auth is disabled and the handler runs unchanged.
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	if s.token == "" {
+		return next
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		given := requestToken(r)
+		if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.token)) != 1 {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized: missing or invalid admin token")
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -132,11 +174,11 @@ func parseUint32(values url.Values, key string) (uint32, error) {
 func (s *Server) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/admin/healthz", s.handleHealthz)
-	mux.HandleFunc("/admin/explain/recent", s.handleExplainRecent)
-	mux.HandleFunc("/admin/explain/backend", s.handleExplainBackend)
-	mux.HandleFunc("/admin/mode", s.handleMode)
-	mux.HandleFunc("/admin/ring", s.handleRing)
-	mux.HandleFunc("/admin/consensus", s.handleConsensus)
+	mux.HandleFunc("/admin/explain/recent", s.requireAuth(s.handleExplainRecent))
+	mux.HandleFunc("/admin/explain/backend", s.requireAuth(s.handleExplainBackend))
+	mux.HandleFunc("/admin/mode", s.requireAuth(s.handleMode))
+	mux.HandleFunc("/admin/ring", s.requireAuth(s.handleRing))
+	mux.HandleFunc("/admin/consensus", s.requireAuth(s.handleConsensus))
 
 	srv := &http.Server{
 		Addr:         s.addr,
@@ -149,8 +191,14 @@ func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 
+	if s.token == "" {
+		s.log.Warn("admin API running WITHOUT authentication — bind to a loopback/private interface only",
+			zap.String("addr", s.addr),
+		)
+	}
 	s.log.Info("admin API server started",
 		zap.String("addr", s.addr),
+		zap.Bool("authenticated", s.token != ""),
 		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode /admin/ring /admin/consensus"),
 	)
 

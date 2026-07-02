@@ -183,5 +183,6 @@ data:
     admin:
       listen_addr: ":9000"
       flight_recorder_capacity: 5000
+      # token: "change-me"  # or inject via OMEGA_ADMIN_TOKEN env var / secret
     xds:
       listen_addr: ":18000"

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/viper"
 )
@@ -49,14 +50,14 @@ type Config struct {
 }
 
 type eBPFConfig struct {
-	ObjectDir    string `mapstructure:"object_dir"`    // dir with .bpf.o files
-	CgroupPath   string `mapstructure:"cgroup_path"`   // cgroup2 mountpoint
-	Interface    string `mapstructure:"interface"`     // NIC for XDP / IRQ affinity
-	PinPath      string `mapstructure:"pin_path"`      // bpffs map pin dir
+	ObjectDir  string `mapstructure:"object_dir"`  // dir with .bpf.o files
+	CgroupPath string `mapstructure:"cgroup_path"` // cgroup2 mountpoint
+	Interface  string `mapstructure:"interface"`   // NIC for XDP / IRQ affinity
+	PinPath    string `mapstructure:"pin_path"`    // bpffs map pin dir
 	// NUMANode: the NUMA node to bind the daemon to.  -1 means auto-detect from NIC.
 	// Set explicitly on multi-socket servers to avoid remote-memory map accesses.
 	// Use numactl --cpunodebind=N --membind=N in the systemd ExecStart.
-	NUMANode     int    `mapstructure:"numa_node"`     // default -1 (auto)
+	NUMANode int `mapstructure:"numa_node"` // default -1 (auto)
 }
 
 type RingConfig struct {
@@ -65,7 +66,7 @@ type RingConfig struct {
 	AdjustEveryN    int     `mapstructure:"adjust_every_n"`    // default 100
 	AdjustThreshold float64 `mapstructure:"adjust_threshold"`  // default 1.30
 	// WAL: write-ahead log path for ring mutations (crash-safe)
-	WALPath         string  `mapstructure:"wal_path"`          // default /var/lib/omega-lb/ring.wal
+	WALPath string `mapstructure:"wal_path"` // default /var/lib/omega-lb/ring.wal
 	// Slow-start: add vnodes gradually after backend recovery
 	SlowStartBatchSize       int `mapstructure:"slow_start_batch_size"`         // default 15 vnodes/tick
 	SlowStartIntervalS       int `mapstructure:"slow_start_interval_s"`         // default 30
@@ -73,22 +74,22 @@ type RingConfig struct {
 }
 
 type RLConfig struct {
-	Enabled         bool    `mapstructure:"enabled"`
-	ONNXModelPath   string  `mapstructure:"onnx_model_path"`
-	InferenceTimeoutMs int  `mapstructure:"inference_timeout_ms"` // default 5
-	StepIntervalMs  int     `mapstructure:"step_interval_ms"`     // default 500
-	ActionSmoothing float64 `mapstructure:"action_smoothing"`     // default 0.7
-	CBFLambda       float64 `mapstructure:"cbf_lambda"`           // default 0.5
-	CapacityPctCap  float64 `mapstructure:"capacity_pct_cap"`     // default 0.80
+	Enabled            bool    `mapstructure:"enabled"`
+	ONNXModelPath      string  `mapstructure:"onnx_model_path"`
+	InferenceTimeoutMs int     `mapstructure:"inference_timeout_ms"` // default 5
+	StepIntervalMs     int     `mapstructure:"step_interval_ms"`     // default 500
+	ActionSmoothing    float64 `mapstructure:"action_smoothing"`     // default 0.7
+	CBFLambda          float64 `mapstructure:"cbf_lambda"`           // default 0.5
+	CapacityPctCap     float64 `mapstructure:"capacity_pct_cap"`     // default 0.80
 	// Model versioning + hot-reload
-	ModelVersion             string `mapstructure:"model_version"`               // e.g. "v1.4.2"
-	ModelStorePath           string `mapstructure:"model_store_path"`            // dir with versioned models
-	HotReloadWatchIntervalS  int    `mapstructure:"hot_reload_watch_interval_s"` // default 60
+	ModelVersion            string `mapstructure:"model_version"`               // e.g. "v1.4.2"
+	ModelStorePath          string `mapstructure:"model_store_path"`            // dir with versioned models
+	HotReloadWatchIntervalS int    `mapstructure:"hot_reload_watch_interval_s"` // default 60
 }
 
 type RateLimitConfig struct {
-	Enabled        bool `mapstructure:"enabled"`
-	UpdateIntervalMs int `mapstructure:"update_interval_ms"` // default 100
+	Enabled          bool `mapstructure:"enabled"`
+	UpdateIntervalMs int  `mapstructure:"update_interval_ms"` // default 100
 	// Per-service limits; key is service_id
 	Services map[string]ServiceRateLimit `mapstructure:"services"`
 }
@@ -101,9 +102,9 @@ type ServiceRateLimit struct {
 }
 
 type HealthConfig struct {
-	ActiveIntervalS  int     `mapstructure:"active_interval_s"`   // default 2
-	FailThreshold    int     `mapstructure:"fail_threshold"`      // default 3
-	PassiveErrorPct  float64 `mapstructure:"passive_error_pct"`   // default 0.10
+	ActiveIntervalS int     `mapstructure:"active_interval_s"` // default 2
+	FailThreshold   int     `mapstructure:"fail_threshold"`    // default 3
+	PassiveErrorPct float64 `mapstructure:"passive_error_pct"` // default 0.10
 	// MinSuccessesBeforeRestore: consecutive successes needed before slow-start.
 	// Default 60 (≈ 2 min at 2s poll interval) ensures backend cache is warm.
 	MinSuccessesBeforeRestore int `mapstructure:"min_successes_before_restore"` // default 60
@@ -119,8 +120,8 @@ type ConsensusConfig struct {
 }
 
 type TelemetryConfig struct {
-	OTLPEndpoint string `mapstructure:"otlp_endpoint"` // e.g. "localhost:4317"
-	ExportIntervalS int `mapstructure:"export_interval_s"` // default 10
+	OTLPEndpoint    string `mapstructure:"otlp_endpoint"`     // e.g. "localhost:4317"
+	ExportIntervalS int    `mapstructure:"export_interval_s"` // default 10
 }
 
 // MetricsConfig controls Prometheus metric emission.
@@ -145,6 +146,12 @@ type AdminConfig struct {
 	// FlightRecorderCapacity is the number of routing decisions retained in
 	// memory for the /admin/explain API.  At 100k RPS, 10000 covers ~100ms.
 	FlightRecorderCapacity int `mapstructure:"flight_recorder_capacity"` // default 10000
+	// Token authenticates admin API requests (all endpoints except /admin/healthz).
+	// Required via header "X-Omega-Admin-Token: <token>" or "Authorization: Bearer <token>".
+	// Falls back to the OMEGA_ADMIN_TOKEN env var if unset here.
+	// If left empty, the admin API runs UNAUTHENTICATED — only safe on a
+	// loopback/private interface never exposed to untrusted networks.
+	Token string `mapstructure:"token"`
 }
 
 type XDSConfig struct {
@@ -155,23 +162,23 @@ type XDSConfig struct {
 //
 // Three modes:
 //
-//   "passthrough" (default): the LB forwards encrypted bytes to backends
-//   unchanged.  Route rules based on URL path are bypassed — the LB only
-//   applies cluster-level routing.  Use this when backends hold the
-//   certificate and end-to-end encryption is required.
+//	"passthrough" (default): the LB forwards encrypted bytes to backends
+//	unchanged.  Route rules based on URL path are bypassed — the LB only
+//	applies cluster-level routing.  Use this when backends hold the
+//	certificate and end-to-end encryption is required.
 //
-//   "sni": the LB reads the SNI hostname from the TLS ClientHello (which is
-//   always plaintext) and uses it as the routing key instead of URL path.
-//   No certificate required on the LB.  Only hostname-based L4 routing is
-//   possible.  Best for multi-tenant pass-through with per-hostname clusters.
+//	"sni": the LB reads the SNI hostname from the TLS ClientHello (which is
+//	always plaintext) and uses it as the routing key instead of URL path.
+//	No certificate required on the LB.  Only hostname-based L4 routing is
+//	possible.  Best for multi-tenant pass-through with per-hostname clusters.
 //
-//   "terminate" / "ktls": the LB terminates TLS using kernel TLS (kTLS,
-//   Linux ≥ 4.13).  After the handshake the kernel decrypts the stream
-//   transparently and eBPF programs see plaintext HTTP bytes.  Full L7
-//   path-based routing is available.  Requires cert_file + key_file.
+//	"terminate" / "ktls": the LB terminates TLS using kernel TLS (kTLS,
+//	Linux ≥ 4.13).  After the handshake the kernel decrypts the stream
+//	transparently and eBPF programs see plaintext HTTP bytes.  Full L7
+//	path-based routing is available.  Requires cert_file + key_file.
 type TLSConfig struct {
 	// Mode: "passthrough" | "sni" | "terminate"
-	Mode     string `mapstructure:"mode"`
+	Mode string `mapstructure:"mode"`
 	// CertFile and KeyFile: PEM-encoded certificate and private key for
 	// "terminate" mode.  Unused in "passthrough" and "sni" modes.
 	CertFile string `mapstructure:"cert_file"`
@@ -223,6 +230,9 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	if cfg.Admin.Token == "" {
+		cfg.Admin.Token = os.Getenv("OMEGA_ADMIN_TOKEN")
 	}
 	return &cfg, nil
 }

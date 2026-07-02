@@ -14,7 +14,7 @@
 #   # Watch what the agent WOULD have done
 #   curl -s http://your-lb:9000/admin/mode | jq .
 #   # → {"mode":"ASSISTED","model_version":"v1.0.0","effective_at":"..."}
-#   
+#
 #   # Compare agent's preferred backends against actual routing outcomes
 #   # in the flight recorder:
 #   curl -s "http://your-lb:9000/admin/explain/recent?n=100" | \
@@ -85,6 +85,8 @@ metrics:
 admin:
   listen_addr: ":9000"
   flight_recorder_capacity: 10000
+  # token: "change-me"  # required to call any /admin/* endpoint besides /healthz;
+                        # or set the OMEGA_ADMIN_TOKEN env var instead.
 
 xds:
   listen_addr: ":18000"

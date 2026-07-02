@@ -179,7 +179,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 	// ── Stage 3+: Admin HTTP API (explain + mode switch) ─────────────────
 	var adminSrv *admin.Server
 	if stage >= 3 {
-		adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, nil, log)
+		adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, nil, cfg.Admin.Token, log)
 		// consensus is wired below; the pointer will be set before Run() is called
 	}
 
@@ -218,7 +218,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 		coord = consensus.NewCoordinator(store, nodeID, leaderKey, stateKey, ttl, rm, log)
 		// back-fill coordinator into admin server so /admin/consensus works
 		if adminSrv != nil {
-			adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, coord, log)
+			adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, coord, cfg.Admin.Token, log)
 		}
 	}
 
