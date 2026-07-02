@@ -335,6 +335,10 @@ Before opening a PR, confirm:
 - [ ] Branched from `develop`
 - [ ] Tests pass locally (`python tests/test_all_layers.py`)
 - [ ] No debug print statements left in code
+  > Note: Small `print()` calls are allowed in standalone CLI or demo scripts
+  > (e.g., `demo/` or `dist/` tools) for interactive/user-facing messages.
+  > Avoid `print()` in library, dashboard, or production-facing modules; prefer
+  logging for structured output.
 - [ ] Docstrings updated if you changed function signatures
 - [ ] `RELEASE_NOTES.md` updated if this is a notable user-facing change
 - [ ] No secrets, tokens, or credentials committed

@@ -57,10 +57,10 @@ def _stream(proc: subprocess.Popen, label: str):
 
 
 def _start(spec: dict) -> subprocess.Popen:
-    print(f"\n{'─'*60}")
+    print(f"\n{'─' * 60}")
     print(f"  Starting: {spec['name']}")
     print(f"  CMD: {' '.join(spec['cmd'])}")
-    print(f"{'─'*60}")
+    print(f"{'─' * 60}")
 
     proc = subprocess.Popen(
         spec["cmd"],

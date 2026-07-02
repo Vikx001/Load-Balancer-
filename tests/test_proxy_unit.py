@@ -141,7 +141,7 @@ class TestHAring:
             counts[ring.route(f"k:{i}")] += 1
 
         ratio = counts[0] / max(counts[1], 1)
-        assert ratio > 1.3, f"Vnode adjustment had no effect: backend-0 share={counts[0]/10000:.2%}"
+        assert ratio > 1.3, f"Vnode adjustment had no effect: backend-0 share={counts[0] / 10000:.2%}"
 
     # ── Health / failover ────────────────────────────────────────────────────
 

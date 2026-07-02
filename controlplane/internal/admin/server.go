@@ -22,17 +22,24 @@
 //
 // ─── SECURITY NOTE ───────────────────────────────────────────────────────────
 // This server MUST be bound to a private/loopback interface (:9000 by default).
-// It is NOT authenticated and must NEVER be exposed to the internet.
-// In Kubernetes: use a NetworkPolicy or an authenticated reverse proxy.
-// In baremetal: bind to 127.0.0.1 or a management VPC NIC only.
+// Set admin.token in config (or the OMEGA_ADMIN_TOKEN env var) to require a
+// "X-Omega-Admin-Token: <token>" or "Authorization: Bearer <token>" header on
+// every endpoint except /admin/healthz. If no token is configured, the API
+// runs UNAUTHENTICATED and must NEVER be exposed beyond a trusted network.
+// In Kubernetes: use a NetworkPolicy or an authenticated reverse proxy in
+// addition to the token. In baremetal: bind to 127.0.0.1 or a management VPC
+// NIC only.
 package admin
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -50,17 +57,35 @@ type Server struct {
 	agent       *rl.Agent
 	ring        *ring.Manager
 	coordinator *consensus.Coordinator
+	token       string
 	log         *zap.Logger
 }
 
 // NewServer creates an admin HTTP server.
 // recorder, agent, ring, and coordinator may be nil if those subsystems are disabled.
+// token, if non-empty, is required (via "X-Omega-Admin-Token" or "Authorization: Bearer"
+// header) on every endpoint except /admin/healthz. Leaving token empty runs the API
+// unauthenticated — only safe when bound to a loopback/private interface.
+const (
+	contentTypeJSON       = "application/json"
+	defaultRecentHistory  = 100
+	maxRecentHistory      = 1000
+	defaultBackendHistory = 50
+	maxBackendHistory     = 500
+	adminTokenHeader      = "X-Omega-Admin-Token"
+)
+
+type apiError struct {
+	Error string `json:"error"`
+}
+
 func NewServer(
 	addr string,
 	recorder *observability.FlightRecorder,
 	agent *rl.Agent,
 	rm *ring.Manager,
 	coord *consensus.Coordinator,
+	token string,
 	log *zap.Logger,
 ) *Server {
 	return &Server{
@@ -69,19 +94,91 @@ func NewServer(
 		agent:       agent,
 		ring:        rm,
 		coordinator: coord,
+		token:       token,
 		log:         log,
 	}
+}
+
+// requestToken extracts the admin token from either the dedicated header or
+// a standard "Authorization: Bearer <token>" header.
+func requestToken(r *http.Request) string {
+	if t := r.Header.Get(adminTokenHeader); t != "" {
+		return t
+	}
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return strings.TrimSpace(auth[len("bearer "):])
+	}
+	return ""
+}
+
+// requireAuth wraps a handler so it 401s unless the caller presents a token
+// matching s.token. Comparison is constant-time to avoid timing side-channels.
+// If s.token is empty, auth is disabled and the handler runs unchanged.
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	if s.token == "" {
+		return next
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		given := requestToken(r)
+		if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.token)) != 1 {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized: missing or invalid admin token")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", contentTypeJSON)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(status)
+	writeJSON(w, apiError{Error: message})
+}
+
+func (s *Server) checkMethod(w http.ResponseWriter, r *http.Request, allowed string) bool {
+	if r.Method != allowed {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
+func parsePositiveInt(values url.Values, key string, defaultValue, maxValue int) int {
+	if v := values.Get(key); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			if parsed > maxValue {
+				return maxValue
+			}
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func parseUint32(values url.Values, key string) (uint32, error) {
+	idStr := values.Get(key)
+	if idStr == "" {
+		return 0, fmt.Errorf("missing query param: %s", key)
+	}
+	idParsed, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: must be uint32", key)
+	}
+	return uint32(idParsed), nil
 }
 
 // Run starts the admin HTTP server and blocks until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/admin/healthz", s.handleHealthz)
-	mux.HandleFunc("/admin/explain/recent", s.handleExplainRecent)
-	mux.HandleFunc("/admin/explain/backend", s.handleExplainBackend)
-	mux.HandleFunc("/admin/mode", s.handleMode)
-	mux.HandleFunc("/admin/ring", s.handleRing)
-	mux.HandleFunc("/admin/consensus", s.handleConsensus)
+	mux.HandleFunc("/admin/explain/recent", s.requireAuth(s.handleExplainRecent))
+	mux.HandleFunc("/admin/explain/backend", s.requireAuth(s.handleExplainBackend))
+	mux.HandleFunc("/admin/mode", s.requireAuth(s.handleMode))
+	mux.HandleFunc("/admin/ring", s.requireAuth(s.handleRing))
+	mux.HandleFunc("/admin/consensus", s.requireAuth(s.handleConsensus))
 
 	srv := &http.Server{
 		Addr:         s.addr,
@@ -94,8 +191,14 @@ func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 
+	if s.token == "" {
+		s.log.Warn("admin API running WITHOUT authentication — bind to a loopback/private interface only",
+			zap.String("addr", s.addr),
+		)
+	}
 	s.log.Info("admin API server started",
 		zap.String("addr", s.addr),
+		zap.Bool("authenticated", s.token != ""),
 		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode /admin/ring /admin/consensus"),
 	)
 
@@ -112,12 +215,10 @@ func (s *Server) Run(ctx context.Context) error {
 // ─── GET /admin/healthz ───────────────────────────────────────────────────────
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, map[string]string{
 		"status": "ok",
 		"time":   time.Now().UTC().Format(time.RFC3339Nano),
 	})
@@ -136,15 +237,7 @@ func (s *Server) handleExplainRecent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	n := 100
-	if v := r.URL.Query().Get("n"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			n = parsed
-		}
-	}
-	if n > 1000 {
-		n = 1000 // cap to avoid large response payloads
-	}
+	n := parsePositiveInt(r.URL.Query(), "n", defaultRecentHistory, maxRecentHistory)
 	if s.recorder == nil {
 		http.Error(w, "flight recorder not available", http.StatusServiceUnavailable)
 		return
@@ -163,36 +256,21 @@ func (s *Server) handleExplainRecent(w http.ResponseWriter, r *http.Request) {
 //   $ curl 'http://localhost:9000/admin/explain/backend?id=3&n=20' | jq '.'
 
 func (s *Server) handleExplainBackend(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
 	if s.recorder == nil {
 		http.Error(w, "flight recorder not available", http.StatusServiceUnavailable)
 		return
 	}
-	idStr := r.URL.Query().Get("id")
-	if idStr == "" {
-		http.Error(w, "missing query param: id", http.StatusBadRequest)
-		return
-	}
-	idParsed, err := strconv.ParseUint(idStr, 10, 32)
+	id, err := parseUint32(r.URL.Query(), "id")
 	if err != nil {
-		http.Error(w, "invalid id: must be uint32", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	n := 50
-	if v := r.URL.Query().Get("n"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			n = parsed
-		}
-	}
-	if n > 500 {
-		n = 500
-	}
-	decisions := s.recorder.ForBackend(uint32(idParsed), n)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(decisions)
+	n := parsePositiveInt(r.URL.Query(), "n", defaultBackendHistory, maxBackendHistory)
+	decisions := s.recorder.ForBackend(id, n)
+	writeJSON(w, decisions)
 }
 
 // ─── GET/POST /admin/mode ─────────────────────────────────────────────────────
@@ -331,8 +409,7 @@ type ringResponse struct {
 }
 
 func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
 	if s.ring == nil {
@@ -385,8 +462,7 @@ func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
 //   → {"node_id":"node-1","is_leader":true,"last_applied_version":1716000000000,"store_type":"memory"}
 
 func (s *Server) handleConsensus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.checkMethod(w, r, http.MethodGet) {
 		return
 	}
 	if s.coordinator == nil {

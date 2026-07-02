@@ -5,6 +5,7 @@
 # Probes every component of the demo stack and prints a status table.
 # Designed to be run at any time (even when the stack is not running) to
 # quickly see what is alive and what needs attention.
+# This script is diagnostic only and does not modify any service state.
 #
 # Exit codes:
 #   0 — all probed services are healthy

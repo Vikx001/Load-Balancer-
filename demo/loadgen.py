@@ -123,7 +123,7 @@ async def main():
                 for _ in range(max(0, to_fire)):
                     path = random.choice(PATHS)
                     # Vary client fingerprint to spread across ring
-                    src = f"10.0.{random.randint(0,3)}.{random.randint(1,254)}"
+                    src = f"10.0.{random.randint(0, 3)}.{random.randint(1, 254)}"
                     task = asyncio.create_task(_fire_request(session, path))
                     pending.add(task)
                     task.add_done_callback(pending.discard)

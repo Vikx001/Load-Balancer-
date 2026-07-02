@@ -221,7 +221,7 @@ class KANInference:
             eqs.append(
                 f"w_{i} = max(0, 1 "
                 f"− {cpu_c}·{cpu[i]:.3f} "
-                f"− {lat_c}·{lat_ms[i]/1000:.3f} "
+                f"− {lat_c}·{lat_ms[i] / 1000:.3f} "
                 f"− {err_c}·{err[i]:.4f}) "
                 f"× {int(health[i])}  →  {raw:.4f}"
             )
@@ -369,7 +369,5 @@ class KANInference:
 
     def __repr__(self) -> str:
         return (
-            f"KANInference(mode={self.mode}, "
-            f"inferences={self.stats.inference_count}, "
-            f"errors={self.stats.error_count})"
+            f"KANInference(mode={self.mode}, inferences={self.stats.inference_count}, errors={self.stats.error_count})"
         )

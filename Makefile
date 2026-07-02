@@ -1,8 +1,11 @@
 # ─── Omega-LB Makefile ────────────────────────────────────────────────────────
 SHELL := /bin/bash
+SHELLFLAGS := -eu -o pipefail -c
+MAKEFLAGS += --warn-undefined-variables
 .DEFAULT_GOAL := help
 
 REGISTRY    ?= omega-lb
+# Version falls back to "dev" when git metadata is unavailable (e.g. in minimal CI/checkouts)
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 IMAGE       := $(REGISTRY)/omega-lb:$(VERSION)
 DOCKER_COMPOSE := $(shell if command -v docker-compose >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
@@ -13,6 +16,7 @@ BENCH_DIR   := bench
 EBPF_DIR    := ebpf/kern
 DEPLOY_DIR  := deploy
 OBS_STAGE_ROOT := $(HOME)/.omegalb-observability
+# Local observability stack staging paths used by observability-demo and observability-local targets
 OBS_STAGE_MONITORING := $(OBS_STAGE_ROOT)/monitoring
 OBS_STAGE_SCRIPTS := $(OBS_STAGE_ROOT)/scripts
 OBS_STAGE_GRAFANA := $(OBS_STAGE_ROOT)/grafana
@@ -21,10 +25,10 @@ OBS_STAGE_GRAFANA_DASHBOARDS := $(OBS_STAGE_GRAFANA)/dashboards
 OBS_STAGE_GRAFANA_DASHBOARD := $(OBS_STAGE_GRAFANA_DASHBOARDS)/omegalb-observability.json
 
 .PHONY: help build build-ebpf build-go docker-build docker-run docker-demo observability-demo observability-local \
-	desktop-run desktop-build-macos desktop-build-windows \
+	desktop-run desktop-build-macos desktop-build-windows desktop-clean \
         train-ppo train-dqn bench bench-http \
         k8s-deploy k8s-teardown lint lint-py test test-ml test-all \
-        smoke reset dev health check clean download-model
+        smoke reset dev health check ci clean distclean daily-check download-model
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -98,6 +102,9 @@ desktop-build-macos: ## Build macOS app bundle (.app)
 
 desktop-build-windows: ## Build Windows executable (.exe) from PowerShell
 	@echo "Run in PowerShell: powershell -ExecutionPolicy Bypass -File desktop/build_windows.ps1"
+
+desktop-clean: ## Remove desktop virtualenv created by desktop-run
+	rm -rf .venv-desktop
 
 # ─── ML Training ──────────────────────────────────────────────────────────────
 
@@ -182,8 +189,8 @@ lint: ## Run Go + Python linters
 
 lint-py: ## Lint + format-check Python with ruff
 	@command -v ruff >/dev/null 2>&1 || pip install ruff -q
-	ruff check --output-format=concise demo/ ml/ tests/ dashboard/
-	ruff format --check demo/ ml/ tests/ dashboard/
+	ruff check --output-format=concise demo/ desktop/ ml/ scripts/ tests/ dashboard/
+	ruff format --check demo/ desktop/ ml/ scripts/ tests/ dashboard/
 
 test: ## Run Go unit tests (with race detector)
 	cd $(GO_DIR) && go test ./... -race -timeout 60s
@@ -213,6 +220,10 @@ dev: ## Start full demo stack (4 backends + proxy + dashboard)
 	python demo/run.py
 
 check: lint-py test-ml smoke ## Full local quality gate (lint + unit + smoke)
+
+ci: check ## Alias for CI-style local quality gate
+	@echo "  [ci] running local CI quality gate"
+	$(MAKE) check
 
 smoke-train: ## Smoke-test training pipelines (1 000 steps each, no GPU needed)
 	python -c "\
@@ -251,11 +262,24 @@ download-model: ## Download pre-trained ONNX models from GitHub Releases
 # ─── Clean ────────────────────────────────────────────────────────────────────
 
 clean: ## Remove build artifacts
-	rm -rf bin/ $(EBPF_DIR)/*.bpf.o
+	rm -rf bin/ .venv-desktop $(EBPF_DIR)/*.bpf.o
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
 
-	.PHONY: docs-graph
+distclean: clean ## Remove all generated and downloaded artifacts (aggressive cleanup)
+	rm -rf .venv ml/models outputs/ /tmp/omega_smoke_models 2>/dev/null || true
+	find . -type d -name ".venv*" -exec rm -rf {} + 2>/dev/null || true
+
+# Quick daily check target: runs a lightweight lint + unit test for fast verification
+.PHONY: daily-check
+
+daily-check: ## Quick daily check: run lightweight Python lint and unit test
+	@echo "  [daily] running quick Python checks"
+	@command -v ruff >/dev/null 2>&1 || pip install ruff -q
+	ruff check --output-format=concise tests/ dashboard/ demo/ desktop/ ml/ scripts/
+	python -m pytest tests/test_proxy_unit.py -q
+
+.PHONY: docs-graph
 
 docs-graph: ## Regenerate local AST graph (graphify-out/) and update docs/graphify/GRAPH_REPORT.md
 	@echo "  [docs] generating AST-only graph into graphify-out/ (no LLM)"

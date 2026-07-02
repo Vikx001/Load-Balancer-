@@ -84,6 +84,12 @@ cd "Load-Balancer-"
 - Proxy starts at `http://localhost:8080` for client traffic
 - Dashboard opens at `http://localhost:8501` for live metrics and controls
 
+Note: the default local developer path is the Python demo/runtime stack. The
+fully real Go control plane plus eBPF data plane requires a Linux host with the
+kernel and privilege model described below in "Production Runtime On Linux".
+
+No Docker. No Kubernetes. No cloud account. Just Python 3.13+.
+
 For a local evaluation, you do not need Kubernetes or a cloud account. A standard Python environment is enough.
 
 Developer tooling: For AI-assisted development and token-efficient code navigation, see [GRAPHIFY.md](GRAPHIFY.md) for how to build and query the local Graphify code graph (recommended for contributors using Copilot or other AI assistants).
@@ -193,6 +199,10 @@ The dashboard is the operator view of the system. It exposes routing behavior, b
 
 It can run in a demonstration mode when the proxy is not active, which makes the interface easier to explore before a live deployment.
 
+The Prometheus/Grafana/OTEL flow added in this repository currently observes the
+dashboard and Python demo stack directly. That telemetry is live for the running
+demo processes, but it is not the same thing as the Linux-only Go/eBPF runtime.
+
 ---
 
 ### Production Runtime On Linux
@@ -265,7 +275,7 @@ The dashboard auto-detects the running proxy and switches to **LIVE** mode (gree
 
 ## Quick Start
 
-You only need **Python 3.11+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
+You only need **Python 3.13+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
 
 ### Desktop App
 

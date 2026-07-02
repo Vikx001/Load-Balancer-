@@ -5,6 +5,7 @@
 # Starts the full demo stack, fires N HTTP probes at the proxy, asserts all
 # responses are valid, checks the metrics file is being written, then tears
 # everything down cleanly.
+# This is a local smoke test script only; it does not alter production state.
 #
 # Exit codes:
 #   0 — all assertions passed
@@ -21,6 +22,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
 SMOKE_REQUESTS="${SMOKE_REQUESTS:-30}"
 PROXY_PORT="${OMEGA_LB_PORT:-8080}"
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
@@ -29,7 +35,34 @@ STARTUP_TIMEOUT=15           # seconds to wait for proxy to accept connections
 PIDS=()
 PASS=0
 FAIL=0
+usage() {
+    cat <<'EOF' >&2
+Usage: SMOKE_REQUESTS=<count> bash scripts/smoke_test.sh
+       SMOKE_REQUESTS=<count> ./scripts/smoke_test.sh
+       bash scripts/smoke_test.sh -h | --help
 
+Runs a local demo smoke test against the Omega-LB proxy and local backends.
+EOF
+}
+
+wait_for_http() {
+    local url="$1" deadline="$2" description="$3"
+    until curl -sf "$url" >/dev/null 2>&1; do
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            fail "$description did not respond in time"
+            return 1
+        fi
+        sleep 0.2
+    done
+}
+
+assert_metrics_key() {
+    local key="$1"
+    if $PY -c "import json; d = json.load(open('$METRICS_FILE')); assert '$key' in d" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
 # ── Colour helpers ────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${YELLOW}[smoke]${NC} $*"; }
@@ -83,10 +116,9 @@ done
 info "Waiting for backends …"
 for port in 9000 9001 9002 9003; do
     deadline=$((SECONDS + 10))
-    until curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1; do
-        [ $SECONDS -lt $deadline ] || { fail "Backend :${port} did not start in 10s"; exit 1; }
-        sleep 0.2
-    done
+    if ! wait_for_http "http://127.0.0.1:${port}/health" "$deadline" "Backend :${port}"; then
+        exit 1
+    fi
 done
 ok "All 4 backends up"
 
@@ -144,7 +176,7 @@ if [ ! -f "$METRICS_FILE" ]; then
     fail "Metrics file not found: ${METRICS_FILE}"
 elif [ "$(wc -c < "$METRICS_FILE")" -lt 10 ]; then
     fail "Metrics file appears empty (< 10 bytes)"
-elif python3 -c "import json,sys; json.load(open('$METRICS_FILE'))" 2>/dev/null; then
+elif $PY -c "import json,sys; json.load(open('$METRICS_FILE'))" 2>/dev/null; then
     ok "Metrics file is valid JSON"
 else
     fail "Metrics file is not valid JSON"
@@ -154,11 +186,7 @@ fi
 info "Checking expected metric keys …"
 KEYS_OK=0
 for key in "requests_total" "p99_ms" "backend_weights"; do
-    if $PY -c "
-import json
-d = json.load(open('$METRICS_FILE'))
-assert '$key' in d, 'missing key: $key'
-" 2>/dev/null; then
+    if assert_metrics_key "$key"; then
         KEYS_OK=$((KEYS_OK+1))
     fi
 done

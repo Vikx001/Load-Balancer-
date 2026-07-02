@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/viper"
 )
@@ -145,6 +146,12 @@ type AdminConfig struct {
 	// FlightRecorderCapacity is the number of routing decisions retained in
 	// memory for the /admin/explain API.  At 100k RPS, 10000 covers ~100ms.
 	FlightRecorderCapacity int `mapstructure:"flight_recorder_capacity"` // default 10000
+	// Token authenticates admin API requests (all endpoints except /admin/healthz).
+	// Required via header "X-Omega-Admin-Token: <token>" or "Authorization: Bearer <token>".
+	// Falls back to the OMEGA_ADMIN_TOKEN env var if unset here.
+	// If left empty, the admin API runs UNAUTHENTICATED — only safe on a
+	// loopback/private interface never exposed to untrusted networks.
+	Token string `mapstructure:"token"`
 }
 
 type XDSConfig struct {
@@ -223,6 +230,9 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	if cfg.Admin.Token == "" {
+		cfg.Admin.Token = os.Getenv("OMEGA_ADMIN_TOKEN")
 	}
 	return &cfg, nil
 }

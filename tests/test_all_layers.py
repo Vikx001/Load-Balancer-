@@ -241,7 +241,7 @@ class TestConsistentRing(unittest.TestCase):
         expected = N / 4
         for bid, c in counts.items():
             deviation = abs(c - expected) / expected
-            self.assertLess(deviation, 0.20, f"Backend {bid}: {c} hits, {deviation*100:.1f}% from ideal")
+            self.assertLess(deviation, 0.20, f"Backend {bid}: {c} hits, {deviation * 100:.1f}% from ideal")
 
     def test_adding_backend_minimal_disruption(self):
         """Adding 1 backend should re-route ≤30% of keys (ideal: 25%)."""
@@ -249,7 +249,7 @@ class TestConsistentRing(unittest.TestCase):
         ring5 = self._build_ring([1, 2, 3, 4, 5])
         keys = [f"req-{i}" for i in range(10000)]
         moved = sum(1 for k in keys if self._route(ring4, k) != self._route(ring5, k))
-        self.assertLess(moved / len(keys), 0.35, f"Too many keys moved: {moved/len(keys)*100:.1f}%")
+        self.assertLess(moved / len(keys), 0.35, f"Too many keys moved: {moved / len(keys) * 100:.1f}%")
 
     def test_removing_backend_routes_to_others(self):
         ring4 = self._build_ring([1, 2, 3, 4])

@@ -347,13 +347,13 @@ class OmegaDesktop(QMainWindow):
             zone = zone_item.text().strip() if zone_item else "local"
 
             if not host:
-                raise ValueError(f"Backend row {r+1}: host is required")
+                raise ValueError(f"Backend row {r + 1}: host is required")
             if not port_txt.isdigit():
-                raise ValueError(f"Backend row {r+1}: port must be a number")
+                raise ValueError(f"Backend row {r + 1}: port must be a number")
 
             port = int(port_txt)
             if not (1 <= port <= 65535):
-                raise ValueError(f"Backend row {r+1}: port must be in [1, 65535]")
+                raise ValueError(f"Backend row {r + 1}: port must be in [1, 65535]")
 
             backends.append({"name": name or f"backend-{r}", "host": host, "port": port, "zone": zone or "local"})
 
@@ -392,7 +392,7 @@ class OmegaDesktop(QMainWindow):
             port_txt = port_item.text().strip() if port_item else ""
 
             if not host or not port_txt.isdigit():
-                QMessageBox.warning(self, "Invalid backend", f"Row {row+1}: host/port invalid")
+                QMessageBox.warning(self, "Invalid backend", f"Row {row + 1}: host/port invalid")
                 return
 
             port = int(port_txt)
@@ -409,26 +409,26 @@ class OmegaDesktop(QMainWindow):
                             self.wiring_table.item(row, 4).setText("UP")
                             self.wiring_table.item(row, 4).setForeground(QColor(135, 247, 192))
                             self.wiring_table.item(row, 5).setText(f"{latency_ms:.1f}")
-                            self._log(f"Backend {row+1} ({host}:{port}): UP ({latency_ms:.1f}ms)")
+                            self._log(f"Backend {row + 1} ({host}:{port}): UP ({latency_ms:.1f}ms)")
                         else:
                             self.wiring_table.item(row, 4).setText(f"DOWN ({r.status})")
                             self.wiring_table.item(row, 4).setForeground(QColor(255, 156, 176))
-                            self._log(f"Backend {row+1} ({host}:{port}): DOWN (HTTP {r.status})")
+                            self._log(f"Backend {row + 1} ({host}:{port}): DOWN (HTTP {r.status})")
                 except urllib.error.URLError as e:
                     self.wiring_table.item(row, 4).setText("FAIL")
                     self.wiring_table.item(row, 4).setForeground(QColor(255, 156, 176))
                     self.wiring_table.item(row, 5).setText("N/A")
-                    self._log(f"Backend {row+1} ({host}:{port}): FAIL - {e.reason}")
+                    self._log(f"Backend {row + 1} ({host}:{port}): FAIL - {e.reason}")
                 except Exception as e:
                     self.wiring_table.item(row, 4).setText("ERROR")
                     self.wiring_table.item(row, 4).setForeground(QColor(255, 156, 176))
                     self.wiring_table.item(row, 5).setText("-")
-                    self._log(f"Backend {row+1} ({host}:{port}): ERROR - {e}")
+                    self._log(f"Backend {row + 1} ({host}:{port}): ERROR - {e}")
 
             threading.Thread(target=run_test, daemon=True).start()
 
         except Exception as e:
-            self._log(f"Test failed for row {row+1}: {e}")
+            self._log(f"Test failed for row {row + 1}: {e}")
 
     def _test_all_backends(self):
         self._log("Testing all backends...")
@@ -640,8 +640,8 @@ class OmegaDesktop(QMainWindow):
                 names[i],
                 "UP" if i < len(health) and health[i] else "DOWN",
                 f"{(lat[i][-1] if i < len(lat) and lat[i] else 0):.1f}",
-                f"{(load[i][-1] if i < len(load) and load[i] else 0)*100:.1f}%",
-                f"{(err[i][-1] if i < len(err) and err[i] else 0)*100:.2f}",
+                f"{(load[i][-1] if i < len(load) and load[i] else 0) * 100:.1f}%",
+                f"{(err[i][-1] if i < len(err) and err[i] else 0) * 100:.2f}",
                 str(reqs[i] if i < len(reqs) else 0),
                 str(int(vnodes[i]) if i < len(vnodes) else 0),
                 f"{(rates[i] if i < len(rates) else 0):.0f}",

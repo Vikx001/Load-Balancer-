@@ -72,6 +72,8 @@ metrics:
 admin:
   listen_addr: ":9000"
   flight_recorder_capacity: 10000
+  # token: "change-me"  # required to call any /admin/* endpoint besides /healthz;
+                        # or set the OMEGA_ADMIN_TOKEN env var instead.
 
 xds:
   listen_addr: ":18000"

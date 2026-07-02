@@ -30,7 +30,7 @@ type Daemon struct {
 	stage     int
 	ring      *ring.Manager
 	rl        *rl.Agent
-	rl_dqn    *ratelimit.DQNAgent
+	dqnAgent  *ratelimit.DQNAgent
 	health    *health.Checker
 	metrics   *metrics.Collector
 	telem     *telemetry.Exporter
@@ -179,7 +179,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 	// ── Stage 3+: Admin HTTP API (explain + mode switch) ─────────────────
 	var adminSrv *admin.Server
 	if stage >= 3 {
-		adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, nil, log)
+		adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, nil, cfg.Admin.Token, log)
 		// consensus is wired below; the pointer will be set before Run() is called
 	}
 
@@ -218,7 +218,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 		coord = consensus.NewCoordinator(store, nodeID, leaderKey, stateKey, ttl, rm, log)
 		// back-fill coordinator into admin server so /admin/consensus works
 		if adminSrv != nil {
-			adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, coord, log)
+			adminSrv = admin.NewServer(cfg.Admin.ListenAddr, fr, agent, rm, coord, cfg.Admin.Token, log)
 		}
 	}
 
@@ -228,7 +228,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 		stage:     stage,
 		ring:      rm,
 		rl:        agent,
-		rl_dqn:    dqn,
+		dqnAgent:  dqn,
 		health:    hc,
 		metrics:   mc,
 		telem:     te,
@@ -296,8 +296,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	// Stage 5: Rate-limit control loop
-	if d.rl_dqn != nil {
-		g.Go(func() error { return d.rl_dqn.Run(ctx) })
+	if d.dqnAgent != nil {
+		g.Go(func() error { return d.dqnAgent.Run(ctx) })
 	}
 
 	// Stage 2+: Proactive pre-distribution loop (requires metrics for prediction)
