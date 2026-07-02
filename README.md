@@ -521,6 +521,35 @@ Token auth (Bearer or X-Omega-Admin-Token)
 Backend control action (kill/revive/spike)
 ```
 
+### Control-Plane Admin API Authentication
+
+The Go control plane (`controlplane/`) exposes a **separate** HTTP admin API on `:9000`
+(`/admin/mode`, `/admin/explain/recent`, `/admin/healthz`) used for runtime routing
+inspection and mode overrides — distinct from the Python demo proxy's `/_omega/admin`
+path documented above.
+
+Set a token to require authentication on every endpoint except `/admin/healthz`:
+
+```yaml
+admin:
+  listen_addr: ":9000"
+  flight_recorder_capacity: 10000
+  token: "change-me"          # or env: OMEGA_ADMIN_TOKEN
+```
+
+```bash
+curl -H "X-Omega-Admin-Token: $OMEGA_ADMIN_TOKEN" http://your-lb:9000/admin/mode
+# or
+curl -H "Authorization: Bearer $OMEGA_ADMIN_TOKEN" http://your-lb:9000/admin/mode
+```
+
+Token comparison is constant-time (`crypto/subtle.ConstantTimeCompare`) to avoid timing
+side-channels. **If no token is configured, the API runs unauthenticated** and a startup
+warning is logged — this is only safe when `:9000` is bound to a loopback or private
+management interface never reachable from an untrusted network. In Kubernetes, pair the
+token with a `NetworkPolicy` restricting access to the admin port; on baremetal, bind to
+`127.0.0.1` or a management VPC NIC only.
+
 ### Metrics bus
 
 `demo/metrics_store.py` runs a thread-safe rolling collector that snapshots every second and writes `demo/live_metrics.json` atomically. The dashboard reads this file; if it is stale (>5 s) or absent the dashboard falls back to simulation mode automatically.
@@ -1138,13 +1167,19 @@ wrk2 -t4 -c100 -d30s -R100000 http://your-vip/
 
 **Stage 4 shadow evaluation workflow:**
 
+> The control-plane admin API (`:9000`) requires a token on every endpoint except
+> `/admin/healthz` once `admin.token` (or `OMEGA_ADMIN_TOKEN`) is set — see
+> [Control-Plane Admin API Authentication](#control-plane-admin-api-authentication).
+> Examples below assume `OMEGA_ADMIN_TOKEN` is exported in your shell.
+
 ```bash
 # Stage 4: watch what the RL agent WOULD have recommended
-curl -s http://your-lb:9000/admin/mode | jq .
+curl -s -H "X-Omega-Admin-Token: $OMEGA_ADMIN_TOKEN" http://your-lb:9000/admin/mode | jq .
 # → {"mode":"ASSISTED","model_version":"v1.0.0"}
 
 # Compare shadow recommendations vs actual routing outcomes
-curl -s "http://your-lb:9000/admin/explain/recent?n=100" | \
+curl -s -H "X-Omega-Admin-Token: $OMEGA_ADMIN_TOKEN" \
+  "http://your-lb:9000/admin/explain/recent?n=100" | \
   jq '[.[] | {backend:.backend_id, latency_ns:.latency_ns, error:.error}]'
 
 # Advance to stage 5 only when agent picks the lower-latency backend 70%+ of the time
