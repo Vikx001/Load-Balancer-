@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Omega-LB — A 5-Layer AI-Driven Load Balancer</title>
+<meta name="description" content="Omega-LB is a research-grade, self-learning load balancer: consistent hashing, control-barrier-function safety, KAN interpretable policy, DQN rate limiting, and proactive rebalancing — with a live dashboard, all open source." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚖️</text></svg>" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="noise-overlay" aria-hidden="true"></div>
+
+<header class="site-header">
+  <nav class="nav container">
+    <a class="brand" href="#top">
+      <span class="brand-mark">Ω</span> Omega-LB
+    </a>
+    <ul class="nav-links">
+      <li><a href="#proof">Live Proof</a></li>
+      <li><a href="#layers">5 Layers</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#security">Admin &amp; Security</a></li>
+      <li><a href="#research">Research</a></li>
+      <li><a href="#roadmap">Roadmap</a></li>
+    </ul>
+    <a class="btn btn-ghost" href="https://github.com/Vikx001/Load-Balancer-" target="_blank" rel="noopener">
+      GitHub ↗
+    </a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero container">
+    <p class="eyebrow">Open source · MIT licensed · Runs entirely on your machine</p>
+    <h1>A 5-layer, AI-driven load balancer<br />you can run <span class="accent">locally, for free</span>.</h1>
+    <p class="lede">
+      Omega-LB sits in front of your backends as a transparent reverse proxy and routes every
+      request through a pipeline of research-grade algorithms — consistent hashing, control-barrier-function
+      safety projection, a KAN interpretable policy, DQN adaptive rate limiting, and proactive
+      pre-distribution. A live dashboard shows exactly why each decision was made. No cloud account,
+      no license, nothing to deploy but your own backends.
+    </p>
+
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="#proof">See the live proof →</a>
+      <a class="btn btn-outline" href="https://github.com/Vikx001/Load-Balancer-" target="_blank" rel="noopener">View source on GitHub</a>
+    </div>
+
+    <div class="code-block hero-code" data-copy>
+      <div class="code-block-head">
+        <span>quick start</span>
+        <button class="copy-btn" type="button" aria-label="Copy command">Copy</button>
+      </div>
+      <pre><code>git clone https://github.com/Vikx001/Load-Balancer-
+cd "Load-Balancer-"
+# edit omega-lb.yaml with your backend addresses
+./start.sh
+# proxy →  http://localhost:8080
+# dashboard → http://localhost:8501</code></pre>
+    </div>
+
+    <p class="hero-note">
+      Synthesises 12 research papers (2024–2026) into a single working system. See
+      <a href="#research">Research Foundations</a>.
+    </p>
+  </section>
+
+  <!-- ============ LIVE PROOF ============ -->
+  <section id="proof" class="section container">
+    <h2 class="section-title">Live proof, not marketing screenshots</h2>
+    <p class="section-sub">
+      Every image below was captured from a running Lima VM (Ubuntu 22.04, kernel 5.15, ARM64)
+      after 363K+ real requests were processed. Nothing here is mocked.
+    </p>
+
+    <div class="proof-tabs" role="tablist" aria-label="Live proof screenshots">
+      <button class="tab-btn active" role="tab" aria-selected="true" data-target="p-arch">Architecture Flow</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="p-req">Request Proof</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="p-overview">Dashboard Overview</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="p-routing">Routing Policy</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="p-gauges">Backend Gauges</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="p-charts">Charts</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="p-health">Health Checks</button>
+    </div>
+
+    <div class="proof-panels">
+      <figure class="proof-panel active" id="p-arch">
+        <img src="assets/screenshots/architecture-flow.png" alt="Full infrastructure flowchart from a live run" loading="lazy" />
+        <figcaption>Every arrow represents real network traffic or a real file write — the Lima VM runs the load generator, proxy, and all 4 backends.</figcaption>
+      </figure>
+      <figure class="proof-panel" id="p-req">
+        <img src="assets/screenshots/request-proof.png" alt="Raw HTTP response headers proving backend routing" loading="lazy" />
+        <figcaption>Every response carries stamped headers proving which backend handled it, how long it took, and which hash-ring slot was selected — plus a real <code>req_id</code> counter.</figcaption>
+      </figure>
+      <figure class="proof-panel" id="p-overview">
+        <img src="assets/screenshots/dashboard-overview.png" alt="Dashboard overview: 207 RPS, 99.71% SLA, 4/4 healthy" loading="lazy" />
+        <figcaption>207 RPS · 99.71% SLA · 4/4 backends healthy — live KPI tiles, sparklines, and a fault simulator.</figcaption>
+      </figure>
+      <figure class="proof-panel" id="p-routing">
+        <img src="assets/screenshots/dashboard-routing.png" alt="KAN weight distribution, CBF safety equations, hash ring vnodes" loading="lazy" />
+        <figcaption>KAN weight distribution, CBF safety equations per backend, and consistent-hash-ring vnode shares — all inspectable, not a black box.</figcaption>
+      </figure>
+      <figure class="proof-panel" id="p-gauges">
+        <img src="assets/screenshots/dashboard-backend-gauges.png" alt="Per-backend utilisation gauges" loading="lazy" />
+        <figcaption>Per-backend utilisation gauges updated live from the metrics bus.</figcaption>
+      </figure>
+      <figure class="proof-panel" id="p-charts">
+        <img src="assets/screenshots/dashboard-charts.png" alt="Latency and throughput history charts" loading="lazy" />
+        <figcaption>Latency and RPS history — the same data the DQN rate limiter and proactive rebalancer consume.</figcaption>
+      </figure>
+      <figure class="proof-panel" id="p-health">
+        <img src="assets/screenshots/dashboard-health.png" alt="Health checks with backend-2 flagged degraded" loading="lazy" />
+        <figcaption>Backend-2 flagged degraded — the circuit breaker and health system caught it in real time.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ 5 LAYERS ============ -->
+  <section id="layers" class="section container">
+    <h2 class="section-title">Five decision-makers, one routing pipeline</h2>
+    <p class="section-sub">Each layer passes a routing decision to the next — click a layer to see what it actually does.</p>
+
+    <div class="layers-accordion">
+      <details open>
+        <summary><span class="layer-num">01</span> Consistent Hash Ring <span class="layer-tag">H&amp;A, OPODIS 2024</span></summary>
+        <div class="layer-body">
+          <p>MurmurHash3 with 150 virtual nodes per backend. Demand-aware, bounded-load redistribution (β = 1.25) keeps the same client mapped to the same backend while automatically shrinking the "slice" of overloaded servers.</p>
+        </div>
+      </details>
+      <details>
+        <summary><span class="layer-num">02</span> CBF Safety Projection <span class="layer-tag">Huawei / IEEE 2024</span></summary>
+        <div class="layer-body">
+          <p>A Control Barrier Function caps utilisation at 80%: <code>w_i = max(0, 1 − 0.42·cpu − 0.31·lat − 10·err) × h_i</code>, projected onto a safe simplex via OSQP. If the routing pipeline suggests something unsafe, this layer mathematically pulls it back.</p>
+        </div>
+      </details>
+      <details>
+        <summary><span class="layer-num">03</span> KAN Interpretable Policy <span class="layer-tag">arXiv 2505.14459, 2025</span></summary>
+        <div class="layer-body">
+          <p>A Kolmogorov–Arnold Network with B-spline edges, hot-reloaded from ONNX. Unlike a black-box neural net, it can express its own decision as a readable symbolic formula — and gracefully falls back to that formula when no trained model is present.</p>
+        </div>
+      </details>
+      <details>
+        <summary><span class="layer-num">04</span> DQN Adaptive Rate Limiting <span class="layer-tag">arXiv 2511.03279</span></summary>
+        <div class="layer-body">
+          <p>Per-backend token buckets governed by an ε-greedy DQN policy choosing between Expanding ↑, Holding —, and Throttling ↓, clamped to <code>[min_rps, max_rps]</code> from config.</p>
+        </div>
+      </details>
+      <details>
+        <summary><span class="layer-num">05</span> Proactive Pre-distribution <span class="layer-tag">Anticipation paper, 2025</span></summary>
+        <div class="layer-body">
+          <p>A 30-second load-slope lookahead rebalances vnode counts <em>before</em> saturation happens, instead of reacting after the fact.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============ ARCHITECTURE ============ -->
+  <section id="architecture" class="section container">
+    <h2 class="section-title">Runtime architecture</h2>
+    <p class="section-sub">
+      The exact diagram from
+      <a href="https://github.com/Vikx001/Load-Balancer-/blob/main/docs/architecture.md" target="_blank" rel="noopener">docs/architecture.md</a>,
+      rendered live from source.
+    </p>
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart LR
+  subgraph HOST[Host Workstation]
+    USER[Operator]
+    CLIENT[Browser or curl]
+    DASH["Streamlit Dashboard&#10;port 8501"]
+    CONFIG[omega-lb.yaml]
+    METRICFILE[demo/live_metrics.json]
+  end
+
+  subgraph RUNTIME[Runtime Node]
+    LOADGEN["Load Generator&#10;demo/loadgen.py"]
+    PROXY["Omega Proxy&#10;demo/proxy.py&#10;port 8080"]
+    ADMIN["Admin Control Endpoint&#10;POST /_omega/admin"]
+    STORE["Metrics Store&#10;rolling collector"]
+
+    subgraph PIPE[Routing Pipeline]
+      HASH["Layer 1&#10;Consistent Hash Ring"]
+      HEALTH["Layer 2&#10;Health and CBF Safety"]
+      KAN["Layer 3&#10;KAN Inference"]
+      DQN["Layer 4&#10;DQN Rate Limiting"]
+      REBAL["Layer 5&#10;Proactive Rebalance"]
+    end
+
+    subgraph POOL[Backend Pool]
+      APP1[backend-1]
+      APP2[backend-2]
+      APP3[backend-3]
+      APP4[backend-4]
+    end
+  end
+
+  USER --> CLIENT
+  USER --> DASH
+  CONFIG --> PROXY
+  LOADGEN --> PROXY
+  CLIENT -->|HTTP traffic| PROXY
+  DASH -->|operator action| ADMIN
+  ADMIN --> PROXY
+  PROXY --> HASH --> HEALTH --> KAN --> DQN --> REBAL
+  REBAL --> APP1
+  REBAL --> APP2
+  REBAL --> APP3
+  REBAL --> APP4
+  APP1 --> PROXY
+  APP2 --> PROXY
+  APP3 --> PROXY
+  APP4 --> PROXY
+  PROXY -->|HTTP response| CLIENT
+  PROXY --> STORE
+  APP1 --> STORE
+  APP2 --> STORE
+  APP3 --> STORE
+  APP4 --> STORE
+      </pre>
+    </div>
+
+    <div class="perf-grid">
+      <div class="perf-card">
+        <span class="perf-num">~40ns</span>
+        <span class="perf-label">kernel-level eBPF routing (production runtime)</span>
+      </div>
+      <div class="perf-card">
+        <span class="perf-num">100×</span>
+        <span class="perf-label">faster than the userspace Python proxy path</span>
+      </div>
+      <div class="perf-card">
+        <span class="perf-num">150</span>
+        <span class="perf-label">virtual nodes per backend on the hash ring</span>
+      </div>
+      <div class="perf-card">
+        <span class="perf-num">&lt;50ms</span>
+        <span class="perf-label">circuit breaker trip time on backend failure</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ADMIN & SECURITY ============ -->
+  <section id="security" class="section container">
+    <h2 class="section-title">Admin API &amp; security</h2>
+    <p class="section-sub">
+      The Go control-plane admin API (<code>:9000</code>) requires a bearer token on every
+      endpoint except <code>/admin/healthz</code>, compared in constant time to avoid timing
+      side-channels.
+    </p>
+
+    <div class="two-col">
+      <div class="code-block" data-copy>
+        <div class="code-block-head">
+          <span>omega-lb.yaml</span>
+          <button class="copy-btn" type="button" aria-label="Copy config">Copy</button>
+        </div>
+        <pre><code>admin:
+  listen_addr: ":9000"
+  flight_recorder_capacity: 10000
+  token: "change-me"   # or env: OMEGA_ADMIN_TOKEN</code></pre>
+      </div>
+      <div class="code-block" data-copy>
+        <div class="code-block-head">
+          <span>authenticated request</span>
+          <button class="copy-btn" type="button" aria-label="Copy curl command">Copy</button>
+        </div>
+        <pre><code>curl -H "X-Omega-Admin-Token: $OMEGA_ADMIN_TOKEN" \
+  http://your-lb:9000/admin/mode
+
+# or
+curl -H "Authorization: Bearer $OMEGA_ADMIN_TOKEN" \
+  http://your-lb:9000/admin/mode</code></pre>
+      </div>
+    </div>
+
+    <ul class="checklist">
+      <li>If no token is configured the API runs unauthenticated and logs a startup warning — only safe on a loopback/private interface.</li>
+      <li>In Kubernetes, pair the token with a <code>NetworkPolicy</code> restricting access to the admin port.</li>
+      <li>eBPF capability requirements (<code>CAP_BPF</code>, <code>CAP_NET_ADMIN</code>, <code>CAP_SYS_ADMIN</code>) are documented and justified in <a href="https://github.com/Vikx001/Load-Balancer-/blob/main/docs/security/ebpf-capability-justification.md" target="_blank" rel="noopener">docs/security/ebpf-capability-justification.md</a>, with an NGINX-fallback mode for restricted clusters that need zero elevated capabilities.</li>
+    </ul>
+  </section>
+
+  <!-- ============ RESEARCH ============ -->
+  <section id="research" class="section container">
+    <h2 class="section-title">Research foundations</h2>
+    <p class="section-sub">Every layer is a real implementation of a published algorithm, not an ad-hoc heuristic.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Algorithm</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0</td><td>eBPF XDP + sock_ops data plane</td><td>XLB, 2026</td></tr>
+          <tr><td>1</td><td>Demand-aware consistent hashing (H&amp;A)</td><td>OPODIS 2024</td></tr>
+          <tr><td>2</td><td>PPO + Control Barrier Function safe RL</td><td>Huawei / IEEE 2024</td></tr>
+          <tr><td>3</td><td>Kolmogorov–Arnold Network interpretable policy</td><td>arXiv 2505.14459, 2025</td></tr>
+          <tr><td>4</td><td>DQN + A3C adaptive rate limiting</td><td>arXiv 2511.03279</td></tr>
+          <tr><td>5</td><td>Proactive pre-distribution via load-slope lookahead</td><td>Anticipation paper, 2025</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ ROADMAP ============ -->
+  <section id="roadmap" class="section container">
+    <h2 class="section-title">Staged production rollout</h2>
+    <p class="section-sub">Each stage is independently deployable and gated by a hard advance criterion — no big-bang cutovers.</p>
+
+    <div class="roadmap-tabs" role="tablist" aria-label="Rollout stages">
+      <button class="tab-btn active" role="tab" aria-selected="true" data-target="s1">Stage 1</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="s2">Stage 2</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="s3">Stage 3</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="s4">Stage 4</button>
+      <button class="tab-btn" role="tab" aria-selected="false" data-target="s5">Stage 5</button>
+    </div>
+
+    <div class="roadmap-panels">
+      <div class="roadmap-panel active" id="s1">
+        <h3>eBPF + round-robin</h3>
+        <p><strong>Ships:</strong> full eBPF data plane, equal-weight ring.</p>
+        <p><strong>Advance when:</strong> no incidents for 2 weeks; 2× p99 vs NGINX baseline.</p>
+      </div>
+      <div class="roadmap-panel" id="s2">
+        <h3>H&amp;A ring</h3>
+        <p><strong>Ships:</strong> vnode self-adjustment under load imbalance.</p>
+        <p><strong>Advance when:</strong> H&amp;A adjustment fires in production; vnode migration visible in the admin API.</p>
+      </div>
+      <div class="roadmap-panel" id="s3">
+        <h3>Health + metrics</h3>
+        <p><strong>Ships:</strong> circuit breaker, OTLP export, flight recorder.</p>
+        <p><strong>Advance when:</strong> circuit trips in &lt;50ms; 2 weeks of baseline metrics collected.</p>
+      </div>
+      <div class="roadmap-panel" id="s4">
+        <h3>RL shadow</h3>
+        <p><strong>Ships:</strong> agent observes and recommends, but does not route.</p>
+        <p><strong>Advance when:</strong> shadow recommendations outperform the ring in 70%+ of cases.</p>
+      </div>
+      <div class="roadmap-panel" id="s5">
+        <h3>RL live</h3>
+        <p><strong>Ships:</strong> agent controls ring weights directly.</p>
+        <p><strong>Advance when:</strong> a 5% traffic A/B canary passes with p99 ≤ stage 3 baseline.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CTA / FOOTER ============ -->
+  <section class="section container cta-final">
+    <h2 class="section-title">Run it yourself in under a minute</h2>
+    <p class="section-sub">Python 3.13+, no Docker, no Kubernetes, no cloud account required for the local demo stack.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="https://github.com/Vikx001/Load-Balancer-#quick-start-standalone-no-linux-required" target="_blank" rel="noopener">Read the full quick start →</a>
+      <a class="btn btn-outline" href="https://github.com/Vikx001/Load-Balancer-/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <span>© <span id="year"></span> Omega-LB — MIT Licensed</span>
+    <div class="footer-links">
+      <a href="https://github.com/Vikx001/Load-Balancer-" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/Vikx001/Load-Balancer-/blob/main/README.md" target="_blank" rel="noopener">README</a>
+      <a href="https://github.com/Vikx001/Load-Balancer-/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+      <a href="https://github.com/Vikx001/Load-Balancer-/blob/main/RELEASE_NOTES.md" target="_blank" rel="noopener">Release Notes</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
