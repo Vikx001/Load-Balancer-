@@ -1,0 +1,56 @@
+name: Graphify AST Regeneration
+
+on:
+  workflow_dispatch: # manual trigger only — run when you want a fresh graph report
+  schedule:
+    - cron: '0 3 * * 0' # weekly on Sunday at 03:00 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  graphify:
+    name: Run Graphify (AST-only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Graphify
+        run: |
+          python -m venv .venv-graphify
+          . .venv-graphify/bin/activate
+          pip install --upgrade pip
+          pip install graphifyy
+
+      - name: Run Graphify update (AST-only)
+        run: |
+          . .venv-graphify/bin/activate
+          # --no-viz and --out are not valid for `update`; only --no-cluster is supported
+          graphify update . --no-cluster
+
+      - name: Copy GRAPH_REPORT to docs/graphify
+        run: |
+          if [ ! -f graphify-out/GRAPH_REPORT.md ]; then
+            echo "graphify-out/GRAPH_REPORT.md not found – extraction produced no output"
+            exit 1
+          fi
+          mkdir -p docs/graphify
+          cp graphify-out/GRAPH_REPORT.md docs/graphify/GRAPH_REPORT.md
+
+      - name: Commit and push GRAPH_REPORT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/graphify/GRAPH_REPORT.md
+          git commit -m "chore(graph): update GRAPH_REPORT.md [skip ci]" || echo "No changes to commit"
+          git push origin HEAD:main

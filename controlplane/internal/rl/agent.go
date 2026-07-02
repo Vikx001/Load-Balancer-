@@ -25,9 +25,10 @@ import (
 //   - Runbook says "kill omega-lb" which interrupts all traffic
 //
 // With modes, the operator can:
-//   $ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"ASSISTED"}'  # skip KAN
-//   $ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"MANUAL","weights":[0.5,0.3,0.2]}'
-//   $ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"AUTO"}' # restore RL
+//
+//	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"ASSISTED"}'  # skip KAN
+//	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"MANUAL","weights":[0.5,0.3,0.2]}'
+//	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"AUTO"}' # restore RL
 type AgentMode int
 
 const (
@@ -43,14 +44,14 @@ const (
 
 // Agent is the main RL control loop: observe → infer → project → act.
 type Agent struct {
-	cfg      config.RLConfig
-	log      *zap.Logger
-	kan      *KANActor
-	cbf      *CBFProjector
-	ring     *ring.Manager
-	ood      *OODDetector
-	prevW    []float64
-	mu       sync.Mutex
+	cfg   config.RLConfig
+	log   *zap.Logger
+	kan   *KANActor
+	cbf   *CBFProjector
+	ring  *ring.Manager
+	ood   *OODDetector
+	prevW []float64
+	mu    sync.Mutex
 
 	// mode controls whether KAN inference is used (see AgentMode above).
 	mode          AgentMode
@@ -356,16 +357,19 @@ func vnodeCount(weight float64, base, nBackends int) int {
 // collectState assembles the MDP state vector from the live metrics.GlobalCollector.
 //
 // State vector layout per backend (8 features × N backends + 4 global):
-//   [0] latency_ewma_ms      — EWMA latency in milliseconds
-//   [1] error_rate_1m        — exponential smoothed 1-min error rate (0-1)
-//   [2] request_count_norm   — requests normalised by global max
-//   [3..6] load_hist_norm    — last 4 load history samples (normalised)
-//   [7] vnode_count_norm     — current vnode count / maxVnodes
+//
+//	[0] latency_ewma_ms      — EWMA latency in milliseconds
+//	[1] error_rate_1m        — exponential smoothed 1-min error rate (0-1)
+//	[2] request_count_norm   — requests normalised by global max
+//	[3..6] load_hist_norm    — last 4 load history samples (normalised)
+//	[7] vnode_count_norm     — current vnode count / maxVnodes
+//
 // Global features (appended after all backend features):
-//   [N*8+0] ring_balance_factor
-//   [N*8+1] active_backends_count
-//   [N*8+2] p99_latency_ms (global)
-//   [N*8+3] global_error_rate
+//
+//	[N*8+0] ring_balance_factor
+//	[N*8+1] active_backends_count
+//	[N*8+2] p99_latency_ms (global)
+//	[N*8+3] global_error_rate
 func collectState() ([]float64, []uint32) {
 	if metrics.GlobalCollector == nil {
 		return []float64{}, []uint32{}
@@ -424,21 +428,21 @@ func collectState() ([]float64, []uint32) {
 			}
 		}
 		state = append(state,
-			latMs/1000.0,          // [0] latency_ewma_ms → norm
-			errRate,               // [1] error_rate_1m
-			reqNorm,               // [2] request_count_norm
+			latMs/1000.0,               // [0] latency_ewma_ms → norm
+			errRate,                    // [1] error_rate_1m
+			reqNorm,                    // [2] request_count_norm
 			h4[0], h4[1], h4[2], h4[3], // [3..6] load history
-			0.0,                   // [7] vnode_count_norm — filled by ring in future
+			0.0, // [7] vnode_count_norm — filled by ring in future
 		)
 	}
 
 	// Global features
 	n := float64(len(ids))
 	state = append(state,
-		0.0,                       // [N*8+0] ring_balance_factor (from ring.Manager)
-		n/64.0,                    // [N*8+1] active_backends_count (norm by max 64)
-		globalLatSum/n/1000.0,     // [N*8+2] p99_latency approx (avg)
-		globalErrSum/n,            // [N*8+3] global_error_rate
+		0.0,                   // [N*8+0] ring_balance_factor (from ring.Manager)
+		n/64.0,                // [N*8+1] active_backends_count (norm by max 64)
+		globalLatSum/n/1000.0, // [N*8+2] p99_latency approx (avg)
+		globalErrSum/n,        // [N*8+3] global_error_rate
 	)
 	return state, ids
 }

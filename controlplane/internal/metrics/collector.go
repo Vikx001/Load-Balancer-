@@ -7,12 +7,12 @@
 // rate-limited to 1 message/CPU/second — useless under load.
 //
 // The correct approach is to design observability first:
-//   1. Every significant kernel-side decision emits a structured event_sample
-//      to a BPF_MAP_TYPE_RINGBUF (zero-copy, low-overhead, no rate limiting).
-//   2. This package reads those events in real time using cilium/ebpf/ringbuf.
-//   3. Structured logs are emitted for every event (INFO in staging, DEBUG in prod).
-//   4. The FlightRecorder stores the last ringbufCapacity events for the
-//      /admin/explain API — a "black box" for post-hoc incident analysis.
+//  1. Every significant kernel-side decision emits a structured event_sample
+//     to a BPF_MAP_TYPE_RINGBUF (zero-copy, low-overhead, no rate limiting).
+//  2. This package reads those events in real time using cilium/ebpf/ringbuf.
+//  3. Structured logs are emitted for every event (INFO in staging, DEBUG in prod).
+//  4. The FlightRecorder stores the last ringbufCapacity events for the
+//     /admin/explain API — a "black box" for post-hoc incident analysis.
 //
 // In development: run `bpftool prog tracelog` to watch bpf_trace_printk output.
 // In production:  tail structured logs or call /admin/explain?backend_id=X.
@@ -41,16 +41,16 @@ const (
 // If you change event_sample in the C file, update this struct and
 // EventSampleSize immediately.
 type EventSample struct {
-	InstanceID      uint32
-	_               [4]byte  // padding for __u64 alignment
-	LatencyNs       uint64
-	Error           uint32
-	CircuitState    uint32
-	VnodesAtSelect  uint32
-	ProbeIdx        uint8
-	Reason          uint8
-	Pad             uint16
-	TimestampNs     uint64
+	InstanceID     uint32
+	_              [4]byte // padding for __u64 alignment
+	LatencyNs      uint64
+	Error          uint32
+	CircuitState   uint32
+	VnodesAtSelect uint32
+	ProbeIdx       uint8
+	Reason         uint8
+	Pad            uint16
+	TimestampNs    uint64
 }
 
 // EventSampleSize is validated at init time against unsafe.Sizeof.
@@ -58,9 +58,9 @@ const EventSampleSize = 40 // bytes
 
 // Reason codes matching kernel event_sample.reason
 const (
-	ReasonNormal     uint8 = 0
-	ReasonHalfOpen   uint8 = 1
-	ReasonFallback   uint8 = 2
+	ReasonNormal   uint8 = 0
+	ReasonHalfOpen uint8 = 1
+	ReasonFallback uint8 = 2
 )
 
 // Sample is a parsed metric observation from the eBPF ringbuf.
@@ -127,12 +127,12 @@ func (c *Collector) ErrorRate(backendID uint32) float64 {
 // Run reads events from the eBPF ringbuf and updates in-memory stats.
 //
 // Real ringbuf read path:
-//   1. Open the pinned events_ringbuf map from pinPath.
-//   2. Create a ringbuf.Reader (cilium/ebpf/ringbuf).
-//   3. Read() blocks until an event is available or ctx is cancelled.
-//   4. Parse the raw bytes into EventSample.
-//   5. Call Ingest() to update EWMA stats.
-//   6. Call onSample hook (FlightRecorder).
+//  1. Open the pinned events_ringbuf map from pinPath.
+//  2. Create a ringbuf.Reader (cilium/ebpf/ringbuf).
+//  3. Read() blocks until an event is available or ctx is cancelled.
+//  4. Parse the raw bytes into EventSample.
+//  5. Call Ingest() to update EWMA stats.
+//  6. Call onSample hook (FlightRecorder).
 //
 // If the pinned map is not yet available (daemon just started), fall back to
 // polling every 500ms until the map appears.
@@ -205,7 +205,7 @@ func parseEventSample(raw []byte) (Sample, bool) {
 	_ = unsafe.Sizeof(EventSample{}) // keep import
 	le := binary.LittleEndian
 	s := Sample{
-		InstanceID:     le.Uint32(raw[0:4]),
+		InstanceID: le.Uint32(raw[0:4]),
 		// raw[4:8] = padding
 		LatencyNs:      le.Uint64(raw[8:16]),
 		Error:          le.Uint32(raw[16:20]) != 0,

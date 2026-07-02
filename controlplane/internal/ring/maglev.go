@@ -14,7 +14,7 @@
 // Maglev (Google, NSDI 2016) uses a flat array of M slots (M = 65537, a prime).
 // Lookup is ONE array index:
 //
-//   backend_id = maglev_table[hash(key) % M]   ← O(1), fits in L1/L2
+//	backend_id = maglev_table[hash(key) % M]   ← O(1), fits in L1/L2
 //
 // M = 65537 × 4 bytes = 256KB — fits entirely in L2 cache.
 // After the first few requests, the table is hot and lookup becomes ~1ns vs
@@ -30,18 +30,19 @@
 // slow-start/session-affinity logic.  It is NOT in the hot eBPF path.
 //
 // ─── MAGLEV ALGORITHM ────────────────────────────────────────────────────────
-// 1. For each backend b, generate a permutation of M slots using:
-//      offset = hash(b, "offset") % M
-//      skip   = hash(b, "skip")   % (M-1) + 1   (must be non-zero)
-//      perm[b][j] = (offset + j*skip) % M
 //
-// 2. Fill the table with M slots (round-robin across backends weighted by
-//    their vnode count):
-//      next[b] = 0 for all b
-//      for i = 0 to M-1:
-//          pick backend b with highest remaining quota
-//          table[perm[b][next[b]]] = b until an empty slot is found
-//          next[b]++
+//  1. For each backend b, generate a permutation of M slots using:
+//     offset = hash(b, "offset") % M
+//     skip   = hash(b, "skip")   % (M-1) + 1   (must be non-zero)
+//     perm[b][j] = (offset + j*skip) % M
+//
+//  2. Fill the table with M slots (round-robin across backends weighted by
+//     their vnode count):
+//     next[b] = 0 for all b
+//     for i = 0 to M-1:
+//     pick backend b with highest remaining quota
+//     table[perm[b][next[b]]] = b until an empty slot is found
+//     next[b]++
 //
 // This distributes traffic proportional to vnode counts with minimal
 // disruption on backend add/remove (consistent: only 1/N of slots move).

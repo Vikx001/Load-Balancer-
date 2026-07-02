@@ -20,9 +20,9 @@
 // by the Go runtime on any available CPU.  If they land on socket 1 CPUs (the
 // other half of the server), every map read crosses the NUMA interconnect:
 //
-//   Go goroutine on CPU 32 (socket 1) reads instance_stats_map[CPU 0..31]
-//   → each read = NUMA remote access = 120ns instead of 40ns
-//   → at 100k polls/sec = 8ms wasted per second per goroutine (socket 1 CPUs)
+//	Go goroutine on CPU 32 (socket 1) reads instance_stats_map[CPU 0..31]
+//	→ each read = NUMA remote access = 120ns instead of 40ns
+//	→ at 100k polls/sec = 8ms wasted per second per goroutine (socket 1 CPUs)
 //
 // Fix:
 //  1. Detect which NUMA node the NIC is attached to (socket 0 usually).
@@ -31,9 +31,10 @@
 //  4. This collapses all map accesses to local DRAM — 40-60% fewer cache misses.
 //
 // Benchmark:
-//   perf stat -e cache-misses,cache-references --pid=$(pidof omega-lb) -- sleep 5
-//   → compare before/after numactl pinning
-//   → expect: cache-miss rate drops from ~15% to ~6%
+//
+//	perf stat -e cache-misses,cache-references --pid=$(pidof omega-lb) -- sleep 5
+//	→ compare before/after numactl pinning
+//	→ expect: cache-miss rate drops from ~15% to ~6%
 package numa
 
 import (

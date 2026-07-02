@@ -17,11 +17,8 @@ For HTTP benchmarks use wrk2 / k6 (see bench/run_http_bench.sh).
 from __future__ import annotations
 
 import sys
-import time
-import math
 import random
-import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 from pathlib import Path
 
@@ -40,8 +37,8 @@ class BenchResult:
     p50_ms: float
     p99_ms: float
     p999_ms: float
-    load_balance_factor: float   # max / mean load (target ≤ 1.1)
-    safety_violations_pct: float # % timesteps any server exceeded capacity
+    load_balance_factor: float  # max / mean load (target ≤ 1.1)
+    safety_violations_pct: float  # % timesteps any server exceeded capacity
     steps: int
 
     def __str__(self) -> str:
@@ -57,6 +54,7 @@ class BenchResult:
 
 
 # ─── Routing Policies ─────────────────────────────────────────────────────────
+
 
 def policy_round_robin(state: np.ndarray, n: int, rr_state: dict) -> np.ndarray:
     rr_state["idx"] = (rr_state.get("idx", 0) + 1) % n
@@ -79,6 +77,7 @@ def policy_uniform(state: np.ndarray, n: int, _: dict) -> np.ndarray:
 
 def policy_omega_lb(trainer: PPOTrainer, use_cbf: bool):
     """Returns a policy function that uses the trained KAN actor ± CBF."""
+
     def _policy(state: np.ndarray, n: int, _: dict) -> np.ndarray:
         state_t = torch.FloatTensor(state).unsqueeze(0)
         with torch.no_grad():
@@ -88,13 +87,14 @@ def policy_omega_lb(trainer: PPOTrainer, use_cbf: bool):
             w_safe = cbf_project(w.unsqueeze(0), loads)
             w = w_safe.squeeze(0)
         return w.numpy()
+
     return _policy
 
 
 # ─── Benchmark Runner ─────────────────────────────────────────────────────────
 
-def run_benchmark(name: str, policy: Callable, n_backends: int,
-                  steps: int = 10_000) -> BenchResult:
+
+def run_benchmark(name: str, policy: Callable, n_backends: int, steps: int = 10_000) -> BenchResult:
     cfg = PPOConfig(num_backends=n_backends)
     env = LBSimEnv(cfg)
     state = env.reset()
@@ -127,13 +127,13 @@ def run_benchmark(name: str, policy: Callable, n_backends: int,
 
     latencies.sort()
     n = len(latencies)
-    p50  = latencies[int(n * 0.50)]
-    p99  = latencies[int(n * 0.99)]
+    p50 = latencies[int(n * 0.50)]
+    p99 = latencies[int(n * 0.99)]
     p999 = latencies[int(n * 0.999)] if n >= 1000 else latencies[-1]
 
     loads_arr = np.array(loads_history)
     mean_load = loads_arr.mean(axis=1)
-    max_load  = loads_arr.max(axis=1)
+    max_load = loads_arr.max(axis=1)
     balance_factor = float((max_load / (mean_load + 1e-9)).mean())
 
     throughput = float(steps / (steps * 0.5 / 1000))  # simplified
@@ -152,6 +152,7 @@ def run_benchmark(name: str, policy: Callable, n_backends: int,
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
+
 def main():
     N = 4
     STEPS = 5000
@@ -169,24 +170,24 @@ def main():
     print("Using symbolic KAN equations (audit-log mode).\n")
 
     results = [
-        run_benchmark("Round Robin (static)",       policy_round_robin,       N, STEPS),
+        run_benchmark("Round Robin (static)", policy_round_robin, N, STEPS),
         run_benchmark("Least Connections (classic)", policy_least_connections, N, STEPS),
-        run_benchmark("Uniform (H&A ring only)",    policy_uniform,           N, STEPS),
-        run_benchmark("KAN actor (no CBF — unsafe)",
-                      policy_omega_lb(trainer, use_cbf=False), N, STEPS),
-        run_benchmark("Omega-LB full (KAN + CBF)",
-                      policy_omega_lb(trainer, use_cbf=True),  N, STEPS),
+        run_benchmark("Uniform (H&A ring only)", policy_uniform, N, STEPS),
+        run_benchmark("KAN actor (no CBF — unsafe)", policy_omega_lb(trainer, use_cbf=False), N, STEPS),
+        run_benchmark("Omega-LB full (KAN + CBF)", policy_omega_lb(trainer, use_cbf=True), N, STEPS),
     ]
 
-    print(f"\n{'Name':<30} {'RPS':>8}  {'p50':>9}  {'p99':>9}  {'p999':>10}  "
-          f"{'BalanceFactor':>15}  {'Violations':>12}")
+    print(
+        f"\n{'Name':<30} {'RPS':>8}  {'p50':>9}  {'p99':>9}  {'p999':>10}  "
+        f"{'BalanceFactor':>15}  {'Violations':>12}"
+    )
     print("-" * 100)
     for r in results:
         print(r)
 
     print("\nSuccess criteria:")
     omega = results[-1]
-    rr    = results[0]
+    rr = results[0]
     print(f"  Throughput vs RR:         {omega.throughput_rps / rr.throughput_rps:.2f}× (target ≥ 2×)")
     print(f"  p99 latency vs RR:        {omega.p99_ms / rr.p99_ms:.2f}× (target ≤ 0.5×)")
     print(f"  Safety violations:        {omega.safety_violations_pct:.2f}% (target 0%)")

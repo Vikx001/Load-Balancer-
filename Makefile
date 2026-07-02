@@ -278,3 +278,49 @@ daily-check: ## Quick daily check: run lightweight Python lint and unit test
 	@command -v ruff >/dev/null 2>&1 || pip install ruff -q
 	ruff check --output-format=concise tests/ dashboard/ demo/ desktop/ ml/ scripts/
 	python -m pytest tests/test_proxy_unit.py -q
+
+.PHONY: docs-graph
+
+docs-graph: ## Regenerate local AST graph (graphify-out/) and update docs/graphify/GRAPH_REPORT.md
+	@echo "  [docs] generating AST-only graph into graphify-out/ (no LLM)"
+	@[ -d .venv-graphify ] || python3 -m venv .venv-graphify
+	.venv-graphify/bin/pip install -q --upgrade graphifyy
+	.venv-graphify/bin/graphify update . --no-cluster
+	@mkdir -p docs/graphify
+	cp graphify-out/GRAPH_REPORT.md docs/graphify/GRAPH_REPORT.md
+	@echo "  [docs] graph ready at graphify-out/graph.json"
+	@echo "  [docs] report committed to docs/graphify/GRAPH_REPORT.md"
+
+docs-graph-module: ## Regenerate an AST-only graph for a specific module path (use MODULE=path/to/pkg)
+	@if [ -z "$(MODULE)" ]; then echo "Usage: make docs-graph-module MODULE=path/to/dir" && exit 1; fi
+	@echo "  [docs] generating module AST-only graph for $(MODULE) into graphify-out/ (no LLM)"
+	@[ -d .venv-graphify ] || python3 -m venv .venv-graphify
+	.venv-graphify/bin/pip install -q --upgrade graphifyy
+	.venv-graphify/bin/graphify update $(MODULE) --no-cluster
+	@mkdir -p docs/graphify
+	@sanitized=$$(echo $(MODULE) | sed -e 's/[\// ]/-/g' -e 's/[^A-Za-z0-9._-]/-/g') && \
+		 cp graphify-out/GRAPH_REPORT.md docs/graphify/GRAPH_REPORT-$$sanitized.md && \
+		 cp graphify-out/graph.json docs/graphify/graph-$$sanitized.json
+	@echo "  [docs] module graph ready at docs/graphify/GRAPH_REPORT-$$sanitized.md"
+
+graph-view: ## Serve repository over HTTP for local graph viewer at http://localhost:8001/docs/graphify/viewer.html
+	@echo "  [view] serving repo root on http://localhost:8001 — open docs/graphify/viewer.html"
+	@python3 -m http.server 8001
+
+.PHONY: dev-setup precommit-install precommit-check fmt-go
+
+dev-setup: ## Create Python venv and install developer tooling (pre-commit, black, ruff, isort)
+	@echo "  [dev] creating .venv and installing dev tools"
+	@[ -d .venv ] || python3 -m venv .venv
+	.venv/bin/pip install --upgrade pip
+	.venv/bin/pip install --upgrade pre-commit black ruff isort isort
+	.venv/bin/pre-commit install || true
+
+precommit-install: ## Install pre-commit hooks (uses .venv if present)
+	@if [ -x .venv/bin/pre-commit ]; then .venv/bin/pre-commit install; else pip install pre-commit && pre-commit install; fi
+
+precommit-check: ## Run pre-commit checks across the repository
+	@command -v .venv/bin/pre-commit >/dev/null 2>&1 && .venv/bin/pre-commit run --all-files || pre-commit run --all-files
+
+fmt-go: ## Run gofmt across all tracked Go files
+	@gofmt -s -w $(shell git ls-files '*.go')

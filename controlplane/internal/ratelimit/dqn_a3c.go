@@ -43,10 +43,10 @@ type ServiceLimiter struct {
 }
 
 type transition struct {
-	state   serviceState
-	action  int
-	reward  float64
-	next    serviceState
+	state  serviceState
+	action int
+	reward float64
+	next   serviceState
 }
 
 // RouterWeightBus is a lock-protected shared state bus that allows the DQN rate
@@ -101,11 +101,11 @@ func (b *RouterWeightBus) AggregateCapacity() float64 {
 
 // DQNAgent orchestrates all per-service limiters + A3C global actor.
 type DQNAgent struct {
-	cfg        config.RateLimitConfig
-	log        *zap.Logger
-	services   map[uint32]*ServiceLimiter
-	a3c        *a3cGlobalActor
-	routerBus  *RouterWeightBus // coordination with PPO agent
+	cfg       config.RateLimitConfig
+	log       *zap.Logger
+	services  map[uint32]*ServiceLimiter
+	a3c       *a3cGlobalActor
+	routerBus *RouterWeightBus // coordination with PPO agent
 }
 
 // NewDQNAgent creates the DQN+A3C rate limiting agent.
@@ -185,9 +185,9 @@ func (d *DQNAgent) step() {
 func (d *DQNAgent) observeState(serviceID uint32) serviceState {
 	// Real impl: query metrics.GlobalCollector.ServiceState(serviceID)
 	return serviceState{
-		currentRPS:   100,
+		currentRPS:    100,
 		backendCPUPct: 0.5,
-		currentLimit: d.services[serviceID].currentLimit,
+		currentLimit:  d.services[serviceID].currentLimit,
 	}
 }
 
@@ -202,7 +202,7 @@ func (d *DQNAgent) observeState(serviceID uint32) serviceState {
 // it may allow traffic that exceeds the weighted-capacity envelope because the
 // per-backend CPU reading has not yet risen (deceptive server scenario).
 func computeReward(s serviceState, action int, aggregateCap float64) float64 {
-	reward := s.currentRPS                     // throughput is good
+	reward := s.currentRPS                    // throughput is good
 	reward -= s.errorRate5m * 100             // penalise 5xx
 	reward -= math.Max(0, s.p99LatencyMs-200) // penalise latency > 200ms
 
@@ -302,8 +302,8 @@ type a3cContrib struct {
 }
 
 type a3cGlobalActor struct {
-	mu      sync.Mutex
-	log     *zap.Logger
+	mu       sync.Mutex
+	log      *zap.Logger
 	contribs []a3cContrib
 }
 

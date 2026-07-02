@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Graphify Viewer — Omega-LB</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 1rem; }
+    input { width: 60%; padding: .5rem; margin-right: .5rem }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem }
+    th, td { padding: .4rem .6rem; border-bottom: 1px solid #eee; text-align: left }
+    .muted { color: #666; font-size: .9rem }
+  </style>
+</head>
+<body>
+  <h1>Graphify Viewer</h1>
+  <p class="muted">A lightweight local viewer for <code>graphify-out/graph.json</code>. Run <code>make graph-view</code> and open this page.</p>
+  <div>
+    <input id="q" placeholder="Search by label or file (e.g. circuit_breaker)" />
+    <button id="refresh">Refresh</button>
+    <span id="stats" class="muted"></span>
+  </div>
+
+  <table id="results"><thead><tr><th>Label / ID</th><th>Source file</th><th>Line</th></tr></thead><tbody></tbody></table>
+
+  <script>
+  let nodes = [];
+  async function loadGraph(){
+    try{
+      const r = await fetch('/graphify-out/graph.json');
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      nodes = j.nodes || [];
+      document.getElementById('stats').textContent = nodes.length + ' nodes loaded';
+      render();
+    }catch(e){
+      document.getElementById('stats').textContent = 'Failed to load graph: ' + e;
+    }
+  }
+
+  function getLine(loc){
+    if(!loc) return '';
+    const m = /L(\d+)/.exec(loc);
+    return m ? m[1] : '';
+  }
+
+  function render(){
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    const tbody = document.querySelector('#results tbody');
+    tbody.innerHTML = '';
+    let shown = 0;
+    for(const n of nodes){
+      const label = (n.label || n.id || '').toString();
+      const sf = (n.source_file || '').toString();
+      const loc = (n.source_location || n.loc || '').toString();
+      if(q){
+        if(!(label.toLowerCase().includes(q) || sf.toLowerCase().includes(q))) continue;
+      }
+      const tr = document.createElement('tr');
+      const line = getLine(loc);
+      const atext = document.createElement('a');
+      atext.href = '/' + sf + (line ? '#L' + line : '');
+      atext.textContent = label;
+      atext.target = '_blank';
+      const td1 = document.createElement('td'); td1.appendChild(atext);
+      const td2 = document.createElement('td'); td2.textContent = sf;
+      const td3 = document.createElement('td'); td3.textContent = line;
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+      tbody.appendChild(tr);
+      shown += 1;
+      if(shown >= 500) break;
+    }
+  }
+
+  document.getElementById('q').addEventListener('input', render);
+  document.getElementById('refresh').addEventListener('click', loadGraph);
+  loadGraph();
+  </script>
+</body>
+</html>
