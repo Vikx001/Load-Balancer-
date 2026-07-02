@@ -19,10 +19,11 @@ import (
 // outputs are extrapolations and may be systematically wrong.
 //
 // Detection approach:
-//   For each incoming state vector s, compute the per-dimension z-score:
-//     z_i = |s_i − μ_i| / (σ_i + ε)
-//   The OOD score is max(z_i) across all dimensions.
-//   If OOD score > threshold (default: 3σ), the state is flagged as OOD.
+//
+//	For each incoming state vector s, compute the per-dimension z-score:
+//	  z_i = |s_i − μ_i| / (σ_i + ε)
+//	The OOD score is max(z_i) across all dimensions.
+//	If OOD score > threshold (default: 3σ), the state is flagged as OOD.
 //
 // This is simpler than Mahalanobis distance (which requires a full covariance
 // matrix) and catches the single-feature deviations that are most common in
@@ -37,10 +38,10 @@ type OODDetector struct {
 	threshold float64 // z-score threshold; default 3.0
 
 	// Welford's online algorithm for running mean and variance.
-	n     int64
-	mean  []float64
-	m2    []float64 // sum of squared deviations
-	dim   int
+	n    int64
+	mean []float64
+	m2   []float64 // sum of squared deviations
+	dim  int
 }
 
 // NewOODDetector creates a new OOD detector.

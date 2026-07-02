@@ -49,11 +49,11 @@ body:
       label: Environment
       description: Fill in your environment details
       value: |
-        - OS: 
-        - Python version: 
-        - Go version (if control plane): 
-        - Kernel version (if eBPF): 
-        - Omega-LB version/commit: 
+        - OS:
+        - Python version:
+        - Go version (if control plane):
+        - Kernel version (if eBPF):
+        - Omega-LB version/commit:
     validations:
       required: true
 

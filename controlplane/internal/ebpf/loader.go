@@ -203,11 +203,11 @@ func AssertKernelVersion(log *zap.Logger) (string, error) {
 // Values are conservative upper bounds; adjust if max_entries are changed.
 func MapMemoryBudgetBytes(numCPU int) int64 {
 	const (
-		haRingMapBytes        int64 = 65536 * (4 + 4)    // 512 KB
-		ringMetaMapBytes      int64 = 262148              // 256 KB  (1 × ring_meta)
-		instanceRegistryBytes int64 = 8192 * 28           // 224 KB
-		flowMetricsMapBytes   int64 = 65536 * 40          // 2.5 MB
-		eventsRingbufBytes    int64 = 1 << 20             // 1 MB
+		haRingMapBytes        int64 = 65536 * (4 + 4) // 512 KB
+		ringMetaMapBytes      int64 = 262148          // 256 KB  (1 × ring_meta)
+		instanceRegistryBytes int64 = 8192 * 28       // 224 KB
+		flowMetricsMapBytes   int64 = 65536 * 40      // 2.5 MB
+		eventsRingbufBytes    int64 = 1 << 20         // 1 MB
 	)
 	// instance_stats_map is BPF_MAP_TYPE_PERCPU_HASH: one value copy per CPU.
 	instanceStatsMapBytes := int64(8192) * 32 * int64(numCPU)
@@ -483,4 +483,3 @@ func openPinnedCollection(pinPath string, log *zap.Logger) (*ebpf.Collection, er
 	}
 	return coll, nil
 }
-

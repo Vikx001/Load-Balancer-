@@ -53,10 +53,10 @@ type backendCircuit struct {
 // time-based state transitions (OPEN→HALF_OPEN) and health-checker triggered
 // resets (HALF_OPEN→CLOSED / HALF_OPEN→OPEN).
 type CircuitBreakerManager struct {
-	mu         sync.Mutex
-	log        *zap.Logger
-	states     map[uint32]*backendCircuit // backendID → state
-	pinPath    string                     // path to BPF pin directory
+	mu          sync.Mutex
+	log         *zap.Logger
+	states      map[uint32]*backendCircuit // backendID → state
+	pinPath     string                     // path to BPF pin directory
 	openTimeout time.Duration
 
 	// notifyClosed is called by the manager when a circuit moves to CLOSED.

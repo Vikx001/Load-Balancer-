@@ -16,7 +16,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT" || exit
+cd "$REPO_ROOT" || exit 1
 
 METRICS_FILE="demo/live_metrics.json"
 PROXY_PORT="${OMEGA_LB_PORT:-8080}"

@@ -1,0 +1,46 @@
+name: Graphify PR Summary
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  graphify-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Create venv & install graphify
+        run: |
+          python -m venv .venv-graphify
+          .venv-graphify/bin/pip install --upgrade pip
+          .venv-graphify/bin/pip install graphifyy
+
+      - name: Build AST graph (AST-only)
+        run: .venv-graphify/bin/graphify update . --no-cluster
+
+      - name: Get changed files
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1 || true
+          git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} > changed_files.txt || true
+
+      - name: Generate comment body
+        run: |
+          python tools/graphify_pr_comment.py --graph graphify-out/graph.json --changed changed_files.txt --out graphify_pr_comment.md || true
+
+      - name: Post PR comment
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-file: graphify_pr_comment.md

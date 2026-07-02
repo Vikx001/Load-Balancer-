@@ -7,11 +7,11 @@
 //
 // There are three topologies, and only one of them works transparently:
 //
-//   Mode           Who holds cert     eBPF sees           Path routing
-//   ─────────────  ─────────────      ────────────────     ─────────────
-//   terminate      LB (kTLS)          plaintext bytes      works ✓
-//   sni            LB (no cert)       TLS ClientHello      SNI only ✓
-//   passthrough    backend            encrypted payload    BROKEN ✗
+//	Mode           Who holds cert     eBPF sees           Path routing
+//	─────────────  ─────────────      ────────────────     ─────────────
+//	terminate      LB (kTLS)          plaintext bytes      works ✓
+//	sni            LB (no cert)       TLS ClientHello      SNI only ✓
+//	passthrough    backend            encrypted payload    BROKEN ✗
 //
 // ─── MODE: terminate (kTLS) ──────────────────────────────────────────────────
 // The LB terminates TLS using kTLS (kernel TLS, BPF_SKB_PROG_TYPE).
@@ -39,32 +39,31 @@
 //
 // ─── TLS ClientHello Wire Format ─────────────────────────────────────────────
 //
-//   TLS record:
-//     [0]    content_type  = 0x16 (handshake)
-//     [1..2] version       = 0x0301 (TLS 1.0 compat) or 0x0303
-//     [3..4] length        (uint16 big-endian)
+//	TLS record:
+//	  [0]    content_type  = 0x16 (handshake)
+//	  [1..2] version       = 0x0301 (TLS 1.0 compat) or 0x0303
+//	  [3..4] length        (uint16 big-endian)
 //
-//   Handshake header:
-//     [5]    msg_type      = 0x01 (ClientHello)
-//     [6..8] length        (uint24 big-endian)
+//	Handshake header:
+//	  [5]    msg_type      = 0x01 (ClientHello)
+//	  [6..8] length        (uint24 big-endian)
 //
-//   ClientHello body:
-//     [9..10]  client_version
-//     [11..42] random (32 bytes)
-//     [43]     session_id_len
-//     [43+1 .. 43+session_id_len] session_id
-//     ...cipher_suites, compression_methods...
-//     extensions:
-//       [N..N+1] extensions_length
-//       foreach extension:
-//         [+0..+1] extension_type   (0x0000 = server_name)
-//         [+2..+3] extension_data_length
-//         if type == 0x0000:
-//           [+4..+5] server_name_list_length
-//           [+6]     name_type (0x00 = host_name)
-//           [+7..+8] name_length
-//           [+9..]   name bytes (UTF-8 ASCII hostname)
-//
+//	ClientHello body:
+//	  [9..10]  client_version
+//	  [11..42] random (32 bytes)
+//	  [43]     session_id_len
+//	  [43+1 .. 43+session_id_len] session_id
+//	  ...cipher_suites, compression_methods...
+//	  extensions:
+//	    [N..N+1] extensions_length
+//	    foreach extension:
+//	      [+0..+1] extension_type   (0x0000 = server_name)
+//	      [+2..+3] extension_data_length
+//	      if type == 0x0000:
+//	        [+4..+5] server_name_list_length
+//	        [+6]     name_type (0x00 = host_name)
+//	        [+7..+8] name_length
+//	        [+9..]   name bytes (UTF-8 ASCII hostname)
 package tls
 
 import (

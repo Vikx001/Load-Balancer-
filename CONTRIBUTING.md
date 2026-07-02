@@ -8,6 +8,15 @@ Thank you for your interest in contributing. This document covers everything you
 
 - [Contributing to Omega-LB](#contributing-to-omega-lb)
   - [Table of Contents](#table-of-contents)
+  - [AI-Assisted Development with Graphify](#ai-assisted-development-with-graphify)
+    - [What Graphify Does](#what-graphify-does)
+    - [Measured Token Savings](#measured-token-savings)
+    - [How It Works in This Repo](#how-it-works-in-this-repo)
+    - [Setting Up Graphify Locally](#setting-up-graphify-locally)
+    - [Pre-commit \& Linting (recommended)](#pre-commit--linting-recommended)
+    - [Using Graphify Queries Manually](#using-graphify-queries-manually)
+    - [Keeping the Graph Fresh](#keeping-the-graph-fresh)
+    - [Why This Matters for Contributors](#why-this-matters-for-contributors)
   - [Code of Conduct](#code-of-conduct)
   - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
@@ -32,6 +41,142 @@ Thank you for your interest in contributing. This document covers everything you
     - [Go](#go)
     - [eBPF (C)](#ebpf-c)
   - [Questions?](#questions)
+
+---
+
+## AI-Assisted Development with Graphify
+
+> **This project uses [Graphify](https://github.com/safishamsi/graphify) — a code-first knowledge graph tool — to dramatically reduce AI token consumption during development. We strongly encourage every contributor to run Graphify locally before asking questions to an AI coding assistant.**
+
+We extend our sincere thanks to **[Safi Shamsi](https://github.com/safishamsi)** and all Graphify contributors for building and open-sourcing this tool. Graphify has become a core part of the Omega-LB developer workflow.
+
+### What Graphify Does
+
+Graphify parses the entire repository using AST (Abstract Syntax Tree) extraction across Python, Go, and C source files and builds a persistent knowledge graph stored at `graphify-out/graph.json`. This graph maps every symbol, function, class, import, and call relationship across all languages and files in the repo — **without needing any LLM API key**.
+
+When you (or an AI assistant) ask a code navigation question, instead of loading 5–10 source files to search for an answer, the agent queries the local graph and gets back only the 10–30 nodes relevant to the question. It then reads only the 1–2 files that actually contain the answer.
+
+### Measured Token Savings
+
+The following comparison was measured on this exact codebase for the question *"where is the circuit breaker wired into the request path?"*:
+
+| Approach | Steps | Approximate tokens used |
+|---|---|---|
+| **Without Graphify** | grep → 20 matches across 10 files → read `circuit_breaker.go` (80 lines) → read `checker.go` → read `lb_policy.bpf.c` | ~3,800 tokens |
+| **With Graphify** | `graphify query` → 45-node subgraph → read `circuit_breaker.go` L50–110 only | ~1,100 tokens |
+| **Savings** | | **~71% fewer tokens per query** |
+
+For broader architecture questions spanning 5+ components, the savings reach **80–90%** because the graph replaces multi-file scanning with a single compact traversal.
+
+### How It Works in This Repo
+
+Graphify is wired into VS Code GitHub Copilot Chat via [`.github/copilot-instructions.md`](.github/copilot-instructions.md). Those instructions tell any Copilot agent session to:
+
+1. Run `graphify query "<your question>"` **first** when `graphify-out/graph.json` exists
+2. Receive a scoped subgraph of relevant nodes pointing at exact file + line locations
+3. Read only those targeted files — skipping the broad file-scanning step entirely
+
+This is automatic in VS Code Copilot Chat. No configuration required once the graph is built locally.
+
+### Setting Up Graphify Locally
+
+After cloning the repo, build the local graph once:
+
+```bash
+# Generates graphify-out/graph.json (not committed to git — local only)
+make docs-graph
+```
+
+### Pre-commit & Linting (recommended)
+
+We enforce formatting and basic lint checks locally with `pre-commit`. Run the following once to install developer tooling and hooks:
+
+```bash
+make dev-setup
+make precommit-install
+```
+
+Quick checks:
+
+```bash
+make precommit-check   # run pre-commit checks across the repo
+make fmt-go            # format Go files in-place
+```
+
+CI will also run the same checks on PRs via `.github/workflows/lint.yml`.
+
+Per-module Graphify and local viewer
+-----------------------------------
+
+For focused reviews or very large refactors you can build a per-module AST graph:
+
+```bash
+make docs-graph-module MODULE=controlplane/internal/health
+# output: docs/graphify/GRAPH_REPORT-controlplane-internal-health.md
+```
+
+To explore the produced graph interactively, run the lightweight local viewer:
+
+```bash
+make graph-view
+# then open http://localhost:8001/docs/graphify/viewer.html
+```
+
+Token-savings benchmark
+------------------------
+
+Use the included benchmark to estimate token savings for representative queries:
+
+```bash
+python tools/graphify_bench.py
+```
+
+The benchmark is approximation-based and uses a simple chars->tokens heuristic; it is intended as a reproducible project-level comparator rather than an absolute oracle.
+
+
+
+The graph is regenerated automatically whenever you run `make docs-graph`. It takes about 30–60 seconds for the full repository. Run it again after large refactors.
+
+> **Note:** `graphify-out/` is gitignored. The graph is a local developer artifact, not a committed build artifact. Only [`docs/graphify/GRAPH_REPORT.md`](docs/graphify/GRAPH_REPORT.md) — a human-readable summary — is tracked in version control.
+
+### Using Graphify Queries Manually
+
+You can query the graph directly from the terminal at any time:
+
+```bash
+# Find where a concept lives in the codebase
+.venv-graphify/bin/graphify query "consistent hash ring backend selection"
+
+# Find the relationship between two components
+.venv-graphify/bin/graphify path "CircuitBreakerManager" "lb_policy.bpf.c"
+
+# Get a focused explanation of a component and its neighbors
+.venv-graphify/bin/graphify explain "KAN inference"
+
+# Cap output to a specific token budget
+.venv-graphify/bin/graphify query "RL agent rate limiter" --budget 500
+```
+
+All commands accept `--graph <path>` to point to a non-default graph location.
+
+### Keeping the Graph Fresh
+
+| Situation | Action |
+|---|---|
+| After cloning the repo | `make docs-graph` |
+| After adding new files or major refactors | `make docs-graph` |
+| Stale graph (old symbols) | `make docs-graph` — uses `--no-cluster` for speed |
+| CI / weekly report | Automated via `.github/workflows/graphify.yml` (commits only `GRAPH_REPORT.md`) |
+
+### Why This Matters for Contributors
+
+Every time you open a Copilot Chat session in this workspace and ask *"how does X work?"* or *"where should I add Y?"*, the instruction file routes the question through the graph first. This means:
+
+- **Faster answers** — the agent doesn't need to read half the repo
+- **Lower API cost** — fewer tokens consumed per turn means longer, more productive sessions before hitting context limits
+- **More accurate answers** — graph traversal is deterministic; the agent reads the right files, not the files that happened to match a grep pattern
+
+We encourage all contributors — especially those working with AI coding assistants — to keep their local graph up to date and to use `graphify query` as their first step when exploring unfamiliar parts of the codebase.
 
 ---
 

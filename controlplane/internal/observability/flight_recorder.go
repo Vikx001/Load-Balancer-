@@ -5,12 +5,12 @@
 // When something goes wrong in production — a backend gets over-loaded, sessions
 // drop, the RL agent makes a bad decision — engineers need to answer:
 //
-//   "At 03:47:12.391, why did the load balancer route request X to backend C?"
+//	"At 03:47:12.391, why did the load balancer route request X to backend C?"
 //
 // This is impossible with:
-//   • bpf_trace_printk(): rate-limited to 1/CPU/s; useless under load
-//   • Prometheus counters: aggregated; lose per-request context
-//   • grep on access logs: no knowledge of LB decision state at time of routing
+//   - bpf_trace_printk(): rate-limited to 1/CPU/s; useless under load
+//   - Prometheus counters: aggregated; lose per-request context
+//   - grep on access logs: no knowledge of LB decision state at time of routing
 //
 // This package solves it with two mechanisms:
 //
@@ -24,9 +24,10 @@
 //     Elasticsearch) and query them with the request_id field.
 //
 // Development workflow:
-//   $ bpftool prog tracelog   # watch bpf_trace_printk output during dev
-//   $ curl http://localhost:9000/admin/explain/recent | jq .
-//   $ tail -f /var/log/omega-lb.log | grep '"msg":"routing_decision"'
+//
+//	$ bpftool prog tracelog   # watch bpf_trace_printk output during dev
+//	$ curl http://localhost:9000/admin/explain/recent | jq .
+//	$ tail -f /var/log/omega-lb.log | grep '"msg":"routing_decision"'
 package observability
 
 import (
@@ -84,8 +85,8 @@ type RoutingDecision struct {
 type FlightRecorder struct {
 	mu       sync.RWMutex
 	buf      []RoutingDecision
-	head     int  // next write position (wraps)
-	count    int  // total writes (to distinguish empty from full)
+	head     int // next write position (wraps)
+	count    int // total writes (to distinguish empty from full)
 	capacity int
 	log      *zap.Logger
 }

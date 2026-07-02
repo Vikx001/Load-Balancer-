@@ -32,19 +32,19 @@ import (
 //
 // Usage pattern (proxy layer):
 //
-//	 // Incoming request
-//	 sessionKey := extractSessionID(req)    // cookie, JWT sub, gRPC metadata, etc.
-//	 if backendID, ok := affinity.Route(sessionKey); ok {
-//	     return ring.RouteToSpecific(backendID) // sticky: bypass ring hash
-//	 }
-//	 // New session — use ring
-//	 backendID, _ := ring.Route(hash)
-//	 affinity.Register(sessionKey, backendID)
+//	// Incoming request
+//	sessionKey := extractSessionID(req)    // cookie, JWT sub, gRPC metadata, etc.
+//	if backendID, ok := affinity.Route(sessionKey); ok {
+//	    return ring.RouteToSpecific(backendID) // sticky: bypass ring hash
+//	}
+//	// New session — use ring
+//	backendID, _ := ring.Route(hash)
+//	affinity.Register(sessionKey, backendID)
 //
 // Classifying services:
 //   - Stateless (REST APIs, read queries, cached responses): do not use affinity.
 //   - Stateful (auth, WebSocket, DB connections, gRPC streams): use affinity.
-//   Set Stateful=true on Backend when registering.
+//     Set Stateful=true on Backend when registering.
 type AffinityTable struct {
 	mu       sync.RWMutex
 	sessions map[string]affinityRecord

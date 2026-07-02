@@ -12,51 +12,55 @@ Omega-LB sits in front of your backends as a transparent reverse proxy. It route
 
 > All screenshots and diagrams captured live from a running Lima VM (Ubuntu 22.04, kernel 5.15, ARM64) with 363K+ requests processed.
 
-### How It Works — Full Infrastructure Flowchart
+### Architecture Overview
+
 ![Architecture Flow](docs/screenshots/architecture-flow.png)
 
-Every arrow in the diagram above represents real network traffic or a real file write. The Lima VM runs the load generator, proxy, and all 4 backends. The host machine (macOS shown here, but Linux and Windows work identically) connects to port 8080 via Lima's port-forward and reads metrics through the virtiofs shared mount.
+The screenshot above captures the deployed runtime topology: host operator tools, the Omega proxy, the five-stage routing path, the backend pool, and the metrics feed consumed by the dashboard. A source-controlled architecture reference with separate request, admin, and metrics diagrams is available in [docs/architecture.md](docs/architecture.md).
 
-### Infrastructure & Request Proof — Live Data
+### Request Trace
+
 ![Request Proof](docs/screenshots/request-proof.png)
 
 Every HTTP response from the proxy includes three stamped headers that prove exactly which backend handled the request, how long it took, and which hash ring slot was selected. The backend response body includes a real `req_id` counter and the actual simulated latency applied — not mocked numbers.
 
-### Dashboard Overview — 207 RPS · 99.71% SLA · 4/4 Healthy
+### Dashboard Overview
+
 ![Dashboard Overview](docs/screenshots/dashboard-overview.png)
 
-### Routing Policy — KAN Weight Distribution + CBF Safety Equations + Hash Ring vNodes
+### Routing Policy Detail
+
 ![Routing Policy](docs/screenshots/dashboard-routing.png)
 
-### Backend Utilisation Gauges
+### Backend Utilization
+
 ![Backend Gauges](docs/screenshots/dashboard-backend-gauges.png)
 
-### Latency & RPS History Charts
+### Latency and Throughput History
+
 ![Charts](docs/screenshots/dashboard-charts.png)
 
-### Health Checks — Backend-2 Flagged Degraded
+### Health Status
+
 ![Health Checks](docs/screenshots/dashboard-health.png)
 
 ---
 
-<details>
-<summary><strong>OMEGA-LB — LAYMAN'S DESCRIPTION</strong> (click to expand)</summary>
+## Accessible Overview
 
-<br>
+### What Omega-LB Does
 
-## What Is Omega-LB?
+If you run more than one backend, you need a system that decides which backend should handle each incoming request. That system is a load balancer.
 
-Imagine you have a popular website or API. Thousands of requests hit it every second. You have, say, 4 servers to handle them. The question is: **which server handles which request?** That's what a load balancer does.
-
-A basic load balancer just takes turns — server 1, server 2, server 3, server 4, repeat. Omega-LB doesn't do that. It's a **smart load balancer** that watches what's happening in real time and makes intelligent decisions. It learns. It protects itself. It explains its own reasoning.
+A basic load balancer might simply rotate between servers. Omega-LB goes further: it watches backend health, learns traffic patterns, enforces safety limits, and records enough information for you to understand why a request was routed the way it was.
 
 ---
 
-## The Simple Version
+### The Simple Picture
 
-**You have traffic coming in → Omega-LB sits in the middle → It routes it smartly to your backends.**
+Traffic comes in, Omega-LB evaluates the current state of the system, and then forwards the request to the backend that is the best fit at that moment.
 
-```
+```text
 Your users / load generator
           ↓
     [ Omega-LB :8080 ]
@@ -68,17 +72,17 @@ Point your app, browser, or load tester at `localhost:8080`. Omega-LB figures ou
 
 ---
 
-## How to Run It (3 steps)
+### How To Run It
 
 ```bash
 git clone https://github.com/Vikx001/Load-Balancer-
 cd "Load-Balancer-"
-# Edit omega-lb.yaml — put in your server addresses
+# Edit omega-lb.yaml with your backend addresses
 ./start.sh
 ```
 
-- Proxy starts at **http://localhost:8080** — send traffic here
-- Dashboard opens at **http://localhost:8501** — watch everything in real time
+- Proxy starts at `http://localhost:8080` for client traffic
+- Dashboard opens at `http://localhost:8501` for live metrics and controls
 
 Note: the default local developer path is the Python demo/runtime stack. The
 fully real Go control plane plus eBPF data plane requires a Linux host with the
@@ -86,52 +90,114 @@ kernel and privilege model described below in "Production Runtime On Linux".
 
 No Docker. No Kubernetes. No cloud account. Just Python 3.13+.
 
+For a local evaluation, you do not need Kubernetes or a cloud account. A standard Python environment is enough.
+
+Developer tooling: For AI-assisted development and token-efficient code navigation, see [GRAPHIFY.md](GRAPHIFY.md) for how to build and query the local Graphify code graph (recommended for contributors using Copilot or other AI assistants).
+
+Local developer setup (recommended)
+----------------------------------
+
+Create a reproducible developer environment and install pre-commit hooks:
+
+```bash
+make dev-setup
+# then run one-time
+make precommit-install
+```
+
+Quick checks you can run:
+
+```bash
+# Run pre-commit checks across the repo
+make precommit-check
+
+# Format Go files in-place
+make fmt-go
+
+# Regenerate the local Graphify AST (keeps large graph out of git)
+make docs-graph
+
+# Validate an Anthropic/Claude API key (no model tokens consumed)
+ANTHROPIC_API_KEY=sk-... python tools/check_claude_key.py
+```
+
+Graphify utilities
+------------------
+
+Create a per-module graph (useful for scoped reviews):
+
+```bash
+# Example: generate a graph for the health subsystem
+make docs-graph-module MODULE=controlplane/internal/health
+
+# The report will be written to docs/graphify/GRAPH_REPORT-controlplane-internal-health.md
+```
+
+Run the lightweight viewer locally (opens a simple search UI served from the repo root):
+
+```bash
+make graph-view      # serves http://localhost:8001 — open /docs/graphify/viewer.html
+```
+
+Run the token-savings benchmark (requires graphify-out/graph.json):
+
+```bash
+python tools/graphify_bench.py
+# or supply a file with custom queries
+python tools/graphify_bench.py --queries my_queries.txt
+```
+
 ---
 
-## The 5 Brains (Layers)
+### The Five Routing Layers
 
-Think of it as 5 decision-makers, each passing a "routing ticket" to the next one:
+You can think of Omega-LB as five routing stages that each refine the decision made by the previous stage.
 
-### Brain 1 — The Fair Mapper (Consistent Hash Ring)
-When you join a queue at a supermarket, you mentally pick the shortest line. Brain 1 does this using a **hash ring** — it maps every request to a position on a circle, and each server owns a slice of that circle. It keeps the same user going to the same server (good for login sessions, shopping carts) while adapting its slice sizes when traffic gets uneven.
+### Layer 1: Consistent Hash Ring
 
-> **Analogy:** A pie divided into slices. Busy server? Shrink its slice. Idle server? Give it more.
+The first layer maps each request onto a hash ring. Each backend owns part of that ring, so similar requests tend to land on the same backend. This helps with session affinity and keeps routing stable when the backend set changes.
 
-### Brain 2 — The Safety Guard (Control Barrier Function)
-Even if Brain 1 says "send to Server 2", Brain 2 asks: *"But is Server 2 actually okay right now?"* It watches CPU, latency, and error rate for every server. If a server is getting overwhelmed (>80% utilized), Brain 2 mathematically **projects** the routing away from it — like a bumper that stops you from crashing.
+Practical effect: the system avoids unnecessary reshuffling while still adapting the share assigned to each backend.
 
-> **Analogy:** A traffic cop that redirects cars away from a street that's almost jammed, before it fully jams.
+### Layer 2: Health and Safety Gate
 
-### Brain 3 — The Learner (KAN Neural Network)
-This is an AI model (a Kolmogorov-Arnold Network) that learns patterns in your traffic. Unlike a black-box neural network, this one can write its own routing decision as a **readable math formula** — you can actually see and audit why it made a decision.
+The second layer checks whether the initially selected backend is still safe to use. It considers latency, error rate, and utilization, then reduces or removes targets that are close to failure.
 
-> **Analogy:** A smart intern who not only makes good decisions but can also explain their reasoning in plain English, unlike a black box that just says "trust me."
+Practical effect: the system stops sending traffic into a backend that is technically up but already degraded.
 
-### Brain 4 — The Throttle (DQN Rate Limiter)
-This uses reinforcement learning — the same technique behind game-playing AIs like AlphaGo. It watches each server and decides whether to **expand, hold, or throttle** how many requests per second it sends. It learns over time what actions lead to good outcomes (low latency, low errors).
+### Layer 3: KAN Inference
 
-> **Analogy:** A DJ adjusting the volume on each speaker independently — louder when the crowd responds well, quieter if it's getting distorted.
+The third layer applies a Kolmogorov-Arnold Network to adjust routing weights using recent traffic conditions. Unlike a conventional black-box model, this one can expose a readable symbolic form of its decision process.
 
-### Brain 5 — The Predictor (Proactive Pre-distribution)
-This one looks 30 seconds ahead. If traffic is growing fast, it rebalances server assignments **before** any server gets overloaded, rather than reacting after the fact.
+Practical effect: you gain adaptive routing without losing auditability.
 
-> **Analogy:** A restaurant manager who sees a bus of 40 tourists arriving and starts seating people and alerting chefs before the bus even parks.
+### Layer 4: DQN Rate Limiting
+
+The fourth layer controls how aggressively traffic is sent to each backend. It can expand, hold, or throttle request budgets based on observed outcomes.
+
+Practical effect: the system can protect a struggling backend without taking it fully out of service.
+
+### Layer 5: Proactive Rebalance
+
+The fifth layer looks ahead and adjusts distribution before the system reaches a visible bottleneck. Instead of reacting only after saturation appears, it shifts load earlier.
+
+Practical effect: the system can smooth traffic spikes before they become incidents.
 
 ---
 
-## The Dashboard
+### The Dashboard
 
-A live visual panel that shows everything in real time:
+The dashboard is the operator view of the system. It exposes routing behavior, backend health, and control actions without requiring you to inspect raw logs.
 
 | Tab | What you see |
-|---|---|
-| **Overview** | Requests/sec, error rate, which servers are alive, live request log |
-| **Routing Policy** | How Brains 1–3 are distributing traffic right now |
-| **Rate Control** | Brain 4's throttle decisions per server |
-| **Health Checks** | p50/p99 latency, server health status |
-| **Setup** | Edit config, quick-start guide |
+| --- | --- |
+| **Overview** | Request rate, error rate, backend availability, live request activity |
+| **Routing Policy** | Current distribution logic and weight allocation |
+| **Rate Control** | Per-backend rate decisions and limiter state |
+| **Health Checks** | Latency percentiles and backend status |
+| **Setup** | Configuration editing and startup guidance |
 
-It works **even without a running proxy** — it switches to a built-in simulation so you can explore the UI any time.
+It can run in a demonstration mode when the proxy is not active, which makes the interface easier to explore before a live deployment.
 
 The Prometheus/Grafana/OTEL flow added in this repository currently observes the
 dashboard and Python demo stack directly. That telemetry is live for the running
@@ -139,15 +205,16 @@ demo processes, but it is not the same thing as the Linux-only Go/eBPF runtime.
 
 ---
 
-## The Production Engine (For Linux Servers)
+### Production Runtime On Linux
 
-For real production use on Linux, there's a second, more powerful version of the same system:
+For Linux deployments, the project also includes a lower-level data plane and a Go control plane for higher performance and stronger runtime control.
 
-**Layer 0 — The Kernel Interceptor (eBPF)**
-Instead of routing in software (which adds ~4 microseconds per request), this hooks into the Linux kernel itself using eBPF — a way to run safe custom code directly in the kernel. Traffic is routed at the kernel level in **~40 nanoseconds** — 100× faster than the Python proxy. No packet copying, no userspace round-trips.
+**Layer 0: eBPF data plane**
+Instead of routing in user space, Omega-LB can attach routing logic inside the Linux kernel using eBPF. That reduces overhead and keeps packet handling closer to the network path.
 
-**The Go Control Plane**
-A background daemon written in Go that:
+**Go control plane**
+The control-plane daemon is responsible for:
+
 - Watches Kubernetes (or bare metal) for backend changes
 - Pushes ring configuration into the eBPF maps in real time
 - Runs health checks every 2 seconds
@@ -155,51 +222,49 @@ A background daemon written in Go that:
 
 ---
 
-## The Safety Net (Everything That's Hardened)
+### Built-In Failure Handling
 
-The system is built to survive real-world failures automatically:
+Omega-LB is designed to handle degraded backends, bad model output, and platform constraints without failing silently.
 
 | Scenario | What happens |
-|---|---|
-| A server starts responding slowly | Circuit breaker opens; removed from the ring within 50ms |
-| The AI model makes bad decisions | CBF safety layer overrides it and keeps routing within safe bounds |
-| The AI hasn't seen this traffic pattern before | OOD detector notices and falls back to the simple hash ring |
-| eBPF can't load (kernel too old) | Preflight check tells you exactly what's wrong and how to fix it |
-| Enterprise Kubernetes blocks privileged containers | Deploy in NGINX fallback mode — zero capabilities needed |
-| Two daemons disagree on ring state | Raft-based consensus; one leader wins, others follow |
-| Metrics labels explode (thousands of unique URLs) | Cardinality guard caps labels; overflow buckets into `other` |
+| --- | --- |
+| A backend starts responding slowly | Circuit breaker logic removes it from normal routing quickly |
+| The model output becomes unsafe | The CBF safety layer constrains the decision |
+| The model sees unfamiliar traffic | The OOD path can fall back to a simpler routing mode |
+| eBPF cannot load | Preflight checks surface the incompatibility and fallback options |
+| Privileged containers are blocked | The system can run in fallback mode instead of failing deployment |
+| Nodes disagree on ring state | Consensus and reconciliation logic restore a single source of truth |
+| Metrics cardinality grows too quickly | Label guards cap cardinality and bucket overflow safely |
 
 ---
 
-## Who This Is For
+### Who This Is For
 
-- **You want to understand how production load balancers actually work** — every layer is readable code with comments explaining the algorithm
-- **You're building a system that needs smart traffic routing** — drop this in front of your backends
-- **You're doing ML/RL research on network control** — simulation environment and training scripts are all included
-- **You need to demo a working AI system** — `./start.sh` and it just works, with a live dashboard
-
----
-
-## What It Is NOT
-
-- Not a replacement for HAProxy/Envoy/Nginx at Google scale (yet)
-- Not a managed cloud service — open-source, you run it yourself
-- Not a black box — every routing decision can be inspected, explained, and audited
+- **Engineers learning modern load-balancing design**: each routing layer is visible and inspectable.
+- **Teams that need adaptive traffic routing**: the proxy can sit in front of real backends.
+- **Researchers working on ML or RL for systems control**: simulation and training components are included.
+- **People demonstrating an end-to-end AI systems project**: the stack can be started locally with a dashboard and live metrics.
 
 ---
 
-**One sentence:** Omega-LB is a self-learning load balancer that routes your traffic intelligently, protects your servers from overload, explains its own decisions, runs in your kernel for near-zero overhead in production, and comes with a live dashboard — all open source, all local, no cloud required.
+### What It Is Not
 
-</details>
+- It is not a drop-in replacement for large-scale edge infrastructure.
+- It is not a managed cloud product.
+- It is not a black box; routing behavior is intended to be inspectable.
 
 ---
 
-## What it looks like
+**In one sentence:** Omega-LB is a load balancer that combines deterministic routing, safety constraints, learned policy, and live observability in a stack you can run locally and inspect end to end.
+
+---
+
+## What It Looks Like
 
 The dashboard auto-detects the running proxy and switches to **LIVE** mode (green dot). Without a proxy it falls back to a built-in **DEMO** simulation so you always have something to explore.
 
 | Tab | What you see |
-|---|---|
+| --- | --- |
 | **Overview** | KPI tiles with sparklines, circular utilisation gauges, RPS chart, live request log, registered-targets table, fault simulator |
 | **Routing Policy** | KAN weight stacked-area chart, CBF symbolic equations per backend, traffic-distribution donut, consistent hash-ring vnode shares, balance factor |
 | **Rate Control** | Per-backend DQN action tiles (Expanding / Holding / Throttling), token-bucket utilisation chart |
@@ -208,14 +273,16 @@ The dashboard auto-detects the running proxy and switches to **LIVE** mode (gree
 
 ---
 
-## Quick start (standalone, no Linux required)
+## Quick Start
 
 You only need **Python 3.13+** and your application running somewhere. Works on **macOS, Linux, and Windows**.
 
-### Desktop app (no terminal workflow, recommended)
+### Desktop App
 
 If you want a Postman-like desktop experience, use the native launcher in `desktop/`.
+
 It provides:
+
 - One-click stack start/stop (backends + proxy + loadgen)
 - Live KPIs (RPS, requests, health, error rate)
 - Backend table (latency/load/errors/vnodes/rate/KAN weight)
@@ -243,13 +310,14 @@ powershell -ExecutionPolicy Bypass -File desktop/build_windows.ps1
 ```
 
 To use your own real services from the desktop app:
+
 1. Open the `Backend Wiring` panel in the app
 2. Add your backend host/port entries
 3. Click `Save Wiring`
 4. Disable `Start local managed backends`
 5. Click `Start Stack`
 
-### Production-grade desktop distribution checklist
+### Desktop Distribution Checklist
 
 To ship this as a trusted desktop product (not just an unsigned binary), add these release steps:
 
@@ -260,21 +328,21 @@ To ship this as a trusted desktop product (not just an unsigned binary), add the
 
 Without signing/notarization, users may see OS security warnings on first launch.
 
-### CLI quick start (optional)
+### CLI Quick Start
 
 ```bash
-# 1 — clone
-git clone https://github.com/your-org/omega-lb
-cd omega-lb
+# 1 - clone
+git clone https://github.com/Vikx001/Load-Balancer-.git
+cd "Load-Balancer-"
 
-# 2 — edit omega-lb.yaml with your real backend addresses
-#     (defaults point to localhost:9000-9003)
+# 2 - edit omega-lb.yaml with your real backend addresses
+#     defaults point to localhost:9000-9003
 # macOS / Linux
 nano omega-lb.yaml
 # Windows
 notepad omega-lb.yaml
 
-# 3 — one command: creates venv, installs deps, starts proxy + dashboard
+# 3 - one command: creates venv, installs deps, starts proxy + dashboard
 # macOS / Linux
 ./start.sh
 # Windows (Git Bash or WSL)
@@ -283,12 +351,12 @@ bash start.sh
 
 > **Windows without Git Bash / WSL?** Use the manual start steps below — they work natively in PowerShell or cmd.
 
-The proxy listens on **http://localhost:8080** — point your load generator or browser at that address.  
-The dashboard opens on **http://localhost:8501** — it flips to LIVE automatically once the proxy is up.
+The proxy listens on `http://localhost:8080`; point your load generator or browser at that address.
+The dashboard opens on `http://localhost:8501`; it switches to live mode automatically once the proxy is up.
 
 Press `Ctrl+C` to stop both processes cleanly.
 
-### Local Docker runtime (real LB behavior, no Linux kernel features required)
+### Local Docker Runtime
 
 This path runs the real Python proxy, real aiohttp backends, load generator, and dashboard with health-gated startup ordering.
 
@@ -301,13 +369,15 @@ docker-compose -f deploy/docker/docker-compose-demo.yml up --build
 ```
 
 Endpoints:
+
 - Proxy: `http://localhost:8080`
 - Status: `http://localhost:8080/_omega/status`
 - Dashboard: `http://localhost:8501`
 
-### Manual start (two terminals)
+### Manual Start
 
 **macOS / Linux:**
+
 ```bash
 # Terminal 1 — install dependencies once, then start the proxy
 python3 -m venv .venv
@@ -319,6 +389,7 @@ python3 -m venv .venv
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 # Terminal 1
 python -m venv .venv
@@ -374,6 +445,7 @@ admin:
 Supports **2–8 backends**. Names and zones are displayed verbatim in the dashboard.
 
 For admin operations (`POST /_omega/admin`), requests are validated in this order:
+
 1. Source IP must be in `admin.allowlist`
 2. Per-IP budget must be below `admin.rate_limit_per_min`
 3. Token must match `admin.token` (or `OMEGA_ADMIN_TOKEN`)
@@ -387,7 +459,7 @@ Blocked admin attempts are logged by the proxy as audit lines:
 
 Every inbound request passes through these layers in order:
 
-```
+```text
 Incoming request
        │
        ▼
@@ -461,7 +533,7 @@ Exported fields: `latency_hist`, `load_hist`, `error_hist`, `rps_hist`, `vnode_c
 
 For production deployments Omega-LB adds a Layer 0 eBPF kernel data plane and a Go control-plane daemon:
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │  Layer 0 — eBPF kernel data plane (XDP + sock_ops)       │
 │  filter_manager → route_manager → lb_policy → relay      │
@@ -482,7 +554,7 @@ For production deployments Omega-LB adds a Layer 0 eBPF kernel data plane and a 
 
 ## Project structure
 
-```
+```text
 omega-lb.yaml        User config — backends, proxy address, CBF, rate limits
 start.sh             One-command launcher (venv + proxy + dashboard)
 requirements.txt     Python dependencies
@@ -513,11 +585,12 @@ tests/               Python unit tests (72 tests, 71 pass standalone)
 
 ---
 
-## Running the dashboard alone (DEMO mode)
+## Running the Dashboard Alone
 
 No proxy, no backends needed.
 
 **Step 1 — create and activate a virtual environment:**
+
 ```bash
 # macOS / Linux
 python3 -m venv .venv
@@ -529,11 +602,13 @@ python -m venv .venv
 ```
 
 **Step 2 — install dependencies:**
+
 ```bash
 pip install streamlit plotly pandas numpy
 ```
 
 **Step 3 — create the metrics file (first time only):**
+
 ```bash
 # macOS / Linux
 mkdir -p demo && echo '{}' > demo/live_metrics.json
@@ -544,6 +619,7 @@ New-Item -ItemType Directory -Force demo | Out-Null
 ```
 
 **Step 4 — launch the dashboard:**
+
 ```bash
 # macOS / Linux
 .venv/bin/streamlit run dashboard/app.py
@@ -552,10 +628,11 @@ New-Item -ItemType Directory -Force demo | Out-Null
 .venv\Scripts\streamlit run dashboard\app.py
 ```
 
-Open **http://localhost:8501** in your browser.  
+Open `http://localhost:8501` in your browser.
 If Streamlit prompts for an email, press Enter to skip.
 
 **To stop the dashboard:**
+
 ```bash
 # macOS / Linux
 pkill -f "streamlit run"
@@ -570,14 +647,14 @@ The dashboard runs a built-in M/M/1 queueing simulation with fault injection con
 
 ## Development
 
-### Run tests
+### Run Tests
 
 ```bash
 .venv/bin/pip install -r requirements.txt pytest torch
 python -m pytest tests/ -v --tb=short
 ```
 
-### Train ML models
+### Train ML Models
 
 ```bash
 make train-ppo    # PPO + KAN actor  → ml/models/kan_actor.onnx
@@ -585,7 +662,7 @@ make train-dqn    # DQN + A3C rate limiter
 make smoke-train  # 1000-step smoke test, no GPU needed
 ```
 
-### Full build (Linux, production)
+### Full Build
 
 ```bash
 make build          # eBPF + Go control plane
@@ -594,18 +671,18 @@ make bench          # simulation benchmarks
 make k8s-deploy     # Kubernetes DaemonSet
 ```
 
-### All make targets
+### All Make Targets
 
-```
+```text
 make help
 ```
 
 ---
 
-## Research foundations
+## Research Foundations
 
 | Layer | Algorithm | Source |
-|---|---|---|
+| --- | --- | --- |
 | 0 | eBPF XDP + sock_ops data plane | XLB, 2026 |
 | 1 | Demand-aware consistent hashing (H&A) | OPODIS 2024 |
 | 2 | PPO + Control Barrier Function safe RL | Huawei / IEEE 2024 |
@@ -615,7 +692,7 @@ make help
 
 ---
 
-## Licence
+## License
 
 MIT
 
@@ -637,9 +714,10 @@ MIT
 **Root Cause:** The reward function used only a soft penalty (`delta × violations`) for capacity violations. A high-enough throughput bonus (`gamma_r × RPS/10`) outweighs the soft penalty during traffic spikes. The agent correctly optimises its objective but the objective does not represent the real constraint — this is Goodhart's Law: "When a measure becomes a target, it ceases to be a good measure."
 
 **Wrong code** (`ml/simulation/lb_env.py`):
+
 ```python
 reward = (
-    -alpha * p99_ms
+    - alpha * p99_ms
     - beta * variance * 100
     + gamma_r * total_rps / 10
     - delta * violations          # soft: agent can trade violations for throughput
@@ -647,6 +725,7 @@ reward = (
 ```
 
 **Right code:**
+
 ```python
 # Soft gradient component
 reward = -alpha*p99_ms - beta*variance*100 + gamma_r*total_rps/10 - delta*violations
@@ -655,13 +734,13 @@ reward = -alpha*p99_ms - beta*variance*100 + gamma_r*total_rps/10 - delta*violat
 if max(cpu) > 0.95:
     reward -= 1000.0    # overloaded backend is non-negotiable
 if error_rate > 0.01:
-    reward -= 500.0     # SLA breach
+  reward -= 500.0     # SLA breach
 if p99_ms > 500.0:
-    reward -= 200.0     # unacceptable latency
+  reward -= 200.0     # unacceptable latency
 ```
 
 | What it does | Why it matters |
-|---|---|
+| --- | --- |
 | Hard floor at `cpu > 0.95` → −1000 | Makes overload a cliff, not a slope the agent climbs |
 | Hard floor at `error_rate > 0.01` → −500 | Enforces error-rate SLA regardless of throughput |
 | Separate from `delta` soft penalty | Soft penalty still shapes the gradient; hard floor prevents trade-off |
@@ -694,6 +773,7 @@ info["reward_hacking_penalty"]    # non-zero = reward hacking detected
 **Root Cause:** A Quadratic Program (QP) solve can fail with infeasibility when the constraint set becomes empty (e.g. every backend is at 100% load). The old code fell back to the raw unconstrained weights from the KAN actor — the exact weights that violated the safety constraint in the first place.
 
 **Wrong code** (`controlplane/internal/rl/agent.go`):
+
 ```go
 safeW, err := a.cbf.Project(rawW, state, cbfBackends)
 if err != nil {
@@ -703,6 +783,7 @@ if err != nil {
 ```
 
 **Right code:**
+
 ```go
 // CBFProjector.Project() never returns raw weights on failure.
 // It applies the 3-tier fallback internally.
@@ -717,7 +798,7 @@ if a.cbf.IsFrozen() {
 ```
 
 | Recovery tier | Trigger | Behaviour |
-|---|---|---|
+| --- | --- | --- |
 | Tier 1 | Single QP failure | Return `lastSafeW` from previous successful step |
 | Tier 2 | 3+ consecutive failures | Set `frozenMode = true`; caller skips all ring updates |
 | Tier 3 (always) | Any failure | Log at `Error` level with tier and consecutive-count fields |
@@ -744,12 +825,14 @@ curl -X POST http://omega-lb:9090/internal/cbf/reset
 **Root Cause:** The PPO model is retrained on a fresh dataset every night. The new model may have learned different routing preferences even for the same traffic pattern. Without a change gate, the first step after model load applies the full difference between old and new weights in one shot.
 
 **Wrong code** (`controlplane/internal/rl/agent.go`):
+
 ```go
 // After any policy update, immediately write weights to ring
 applyWeightsToRing(a.ring, backends, safeW)
 ```
 
 **Right code:**
+
 ```go
 // Gate: require two consecutive steps agreeing on any >10% vnode shift
 if !a.shouldApplyWeights(safeW, len(backends)) {
@@ -759,7 +842,7 @@ applyWeightsToRing(a.ring, backends, safeW)
 ```
 
 | Parameter | Value | Rationale |
-|---|---|---|
+| --- | --- | --- |
 | `maxSingleStepDeltaPct` | 10% | Industry-standard consistent-hash migration limit |
 | `requiredAgreements` | 2 | Two consecutive steps agreeing means the shift is stable, not a transient |
 | Confirmation window | 1 step (≈100ms) | Minimal delay for large legitimate traffic-pattern changes |
@@ -773,12 +856,15 @@ applyWeightsToRing(a.ring, backends, safeW)
 **Root Cause:** The PPO value function is only reliable inside the training distribution. For OOD states, the network extrapolates using whatever linear combination of training features happens to activate, and can produce high-confidence but incorrect predictions.
 
 **Detection:** Welford's online z-score test (`controlplane/internal/rl/ood.go`):
-```
+
+```text
 OOD score = max over all dimensions of |s_i − μ_i| / (σ_i + ε)
 ```
+
 A score > 3σ means at least one state feature is more than 3 standard deviations from its training distribution mean.
 
 **Mitigation in action smoothing:**
+
 ```go
 // When OOD, reduce model weight toward 0 (fall back to ring distribution)
 oodScore := a.ood.Score(state)
@@ -787,7 +873,7 @@ modelWeight := a.ood.ActionWeight(oodScore, nominalModelWeight)
 ```
 
 | `oodScore` | `modelWeight` | Behaviour |
-|---|---|---|
+| --- | --- | --- |
 | < 3σ | `nominalModelWeight` | Full model influence |
 | 3σ–6σ | Linearly decays to 0 | Partial fallback |
 | ≥ 6σ | 0.0 | Ring-only routing |
@@ -809,10 +895,12 @@ kubectl logs -l app=omega-lb | grep "OOD state detected"
 **Symptom:** p99 latency of the `rl.Agent.step()` function spikes to 50–200ms during GC pauses despite the ONNX model completing in <5ms normally. The spikes occur at irregular intervals that correlate with Go GC cycles.
 
 **Root Cause (two independent causes):**
+
 1. **Goroutine-per-call:** Spawning a new goroutine for each ONNX call allocates a goroutine stack and a `chan struct{}` per inference request. At 100 RPS this produces ~100 allocations/second, creating significant GC pressure.
 2. **Thread migration:** The ONNX Runtime uses thread-local state. If the Go scheduler migrates the goroutine calling `session.Run()` to a different OS thread mid-call (which can happen at GC stop-the-world boundaries), the TLS pointers become invalid.
 
 **Wrong code:**
+
 ```go
 go func() {
     out, runErr = k.session.Run([][]float32{inp})  // new goroutine every call
@@ -821,6 +909,7 @@ go func() {
 ```
 
 **Right code:**
+
 ```go
 // Single dedicated goroutine, pinned to one OS thread
 func (k *KANActor) RunInferenceLoop(ctx context.Context) {
@@ -837,12 +926,13 @@ func (k *KANActor) RunInferenceLoop(ctx context.Context) {
 ```
 
 **Start the inference goroutine in daemon startup:**
+
 ```go
 go actor.RunInferenceLoop(ctx)
 ```
 
 | Fix | Effect |
-|---|---|
+| --- | --- |
 | `runtime.LockOSThread()` | Prevents OS-thread migration; ONNX TLS is always valid |
 | Pre-allocated `inputBuf` | Eliminates one `[]float32` allocation per inference call |
 | Channel dispatch | Single goroutine stack allocated once at startup |
@@ -856,6 +946,7 @@ go actor.RunInferenceLoop(ctx)
 **Root Cause:** The KAN model's interpretable symbolic equations (extracted post-training) serve as a human-auditable policy description. Without version tracking and diff alerting, any coefficient change (e.g. the CPU penalty changing from 0.42 to 0.71) is invisible.
 
 **Wrong code:**
+
 ```go
 func (k *KANActor) WriteAuditLog(version string) {
     k.log.Info("KAN policy audit",
@@ -866,6 +957,7 @@ func (k *KANActor) WriteAuditLog(version string) {
 ```
 
 **Right code:**
+
 ```go
 func (k *KANActor) WriteAuditLog(version string) {
     newHash := md5.Sum([]byte(equation))
@@ -881,6 +973,7 @@ func (k *KANActor) WriteAuditLog(version string) {
 ```
 
 **Operational process:**
+
 1. After every retrain, run `WriteAuditLog(newVersion)` during model validation.
 2. If the equation changes (hash differs), the log entry is at `Warn` level.
 3. SRE compares consecutive audit lines to identify which coefficients changed.
@@ -907,13 +1000,15 @@ kubectl logs -l app=omega-lb | grep "KAN policy audit" | tail -2
 The oscillation gate (`shouldApplyWeights`) acts as an implicit shadow comparator: by withholding large ring updates until two consecutive steps agree, the agent effectively validates its own predictions before acting. This is not a full shadow mode but it provides the critical safety property.
 
 For full shadow mode (recommended before promoting a new model):
+
 ```bash
 # Start agent in observe-only mode: log decisions but don't apply to ring
 OMEGALB_RL_SHADOW_MODE=true ./omegalb
 ```
 
 In shadow mode, all `applyWeightsToRing` calls are skipped; the agent logs what it *would* have done:
-```
+
+```text
 INFO  rl shadow mode: would apply weights [0.45 0.20 0.20 0.15] (ring unchanged)
 ```
 
@@ -926,6 +1021,7 @@ After 1–4 hours of shadow operation, compare the shadow policy's simulated P99
 **Symptom:** Total system throughput drops by 30–40% after deploying both the PPO router (Layer 2) and DQN rate limiter (Layer 4). Neither layer is individually broken; the combined system oscillates. Logs show the DQN alternating between `ActionIncrease` and `ActionDecrease` every few seconds.
 
 **Root Cause:** The two RL agents have **coupled but uncoordinated reward signals**:
+
 - PPO sends more traffic to backend A (it observes free capacity)
 - DQN sees backend A's CPU rise and cuts the service limit
 - PPO interprets the rate cut as a constraint violation and redistributes to B
@@ -947,12 +1043,13 @@ if currentRPS > aggCap {
 ```
 
 | Without bus | With bus |
-|---|---|
+| --- | --- |
 | DQN penalises all CPU rises | DQN only penalises traffic exceeding PPO's reserved capacity |
 | Agents fight at every step | Agents share a consistent view of the capacity envelope |
 | Throughput collapses 30–40% | Throughput stabilises at 95–98% of theoretical maximum |
 
 **Wiring in daemon startup:**
+
 ```go
 dqnAgent, _ := ratelimit.NewDQNAgent(cfg.RateLimit, log)
 rlAgent.SetRouterBus(dqnAgent.RouterBus())
@@ -978,7 +1075,7 @@ wrapper around NGINX.
 
 **Root cause:** The five-layer architecture has hard sequential dependencies:
 
-```
+```text
 Layer 0 (eBPF)  → must be stable before Layer 1 can collect real load metrics
 Layer 1 (H&A)   → must produce stable metrics before Layer 2 can train on them
 Layer 2 (RL)    → needs 2+ months of simulation + shadow data before going live
@@ -1005,7 +1102,7 @@ rate_limit:
 **Correct approach — phased stages, each independently deployable:**
 
 | Stage | Timeline | What ships | Advance criterion |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **1**: eBPF + round-robin | Month 1–2 | Full eBPF data plane, equal-weight ring | No incidents for 2 weeks; 2× p99 vs NGINX |
 | **2**: H&A ring | Month 3 | Vnode self-adjustment under load imbalance | H&A adjustment fires in production; vnode migration visible in admin API |
 | **3**: Health + metrics | Month 4–5 | Circuit breaker, OTLP, flight recorder | Circuit trips in <50ms; 2 weeks baseline metrics collected |
@@ -1013,6 +1110,7 @@ rate_limit:
 | **5**: RL live | Month 9+ | Agent controls ring weights | A/B canary at 5% traffic passes; p99 ≤ stage 3 baseline |
 
 **What the code does:**
+
 - `controlplane/internal/config/config.go`: `Stage int` field (default `1`) gates subsystems at startup.
 - `controlplane/internal/daemon/daemon.go`: `New()` and `Run()` skip building and launching subsystems that are above the current stage. A structured startup log announces the active stage and prints the advance criteria.
 - `deploy/stages/` — one config file per stage with annotated advance criteria:
@@ -1064,7 +1162,7 @@ admission webhook denial.  The security team says approval takes 3–6 months.
 **Root cause:** Loading eBPF programs requires three Linux capabilities:
 
 | Capability | Used for | Risk if compromised |
-|---|---|---|
+| --- | --- | --- |
 | `CAP_BPF` | `bpf()` syscall to load programs and create maps | Can read kernel memory via malicious eBPF programs |
 | `CAP_NET_ADMIN` | Attach `sock_ops` to cgroup v2 | Can modify network interfaces and routes |
 | `CAP_SYS_ADMIN` | Pin maps to `/sys/fs/bpf` (bpffs) | Very broad; can mount filesystems |
@@ -1090,7 +1188,7 @@ securityContext:
 **Correct approach — three deployment options:**
 
 | Option | Capabilities | When to use |
-|---|---|---|
+| --- | --- | --- |
 | `daemonset-restricted.yaml` | `CAP_BPF` + `CAP_NET_ADMIN` + `CAP_SYS_ADMIN` (minimal, no `privileged:true`) | Enterprise K8s with capability allowlisting; recommended for approval requests |
 | `daemonset-fallback.yaml` | None (zero capabilities) | While awaiting approval; GKE Autopilot; EKS Fargate; managed node-less clusters |
 | `daemonset.yaml` | `privileged:true` | Bare-metal, self-managed clusters, dev environments |
@@ -1179,7 +1277,7 @@ The Go daemon goroutines are scheduled by the Go runtime on **any available CPU*
 land on socket 1 CPUs, every read of `instance_stats_map`, `circuit_state_map`, and
 `ring_meta_map` crosses the NUMA interconnect — 120ns per read instead of 40ns.
 
-```
+```text
 Wrong setup (typical default):
   NIC interrupts  →  eBPF runs on socket 0  →  writes per-CPU[0..31]
   Go daemon reads per-CPU[0..31] from socket 1 CPUs  →  remote DRAM (3–5× penalty)
@@ -1190,7 +1288,7 @@ Correct setup (after fix):
 ```
 
 | | Wrong (default) | Correct (pinned) |
-|---|---|---|
+| --- | --- | --- |
 | Go daemon CPU affinity | any CPU (OS scheduler default) | `numactl --cpunodebind=0 --membind=0` |
 | per-CPU map read latency | ~120ns (remote DRAM) | ~40ns (local DRAM) |
 | cache-miss rate (perf stat) | 12–18% | 4–7% |
@@ -1222,7 +1320,8 @@ perf stat -e cache-misses,cache-references --pid=$(pidof omega-lb) -- sleep 5
 ```
 
 **Omega-LB startup log tells you exactly what to do:**
-```
+
+```text
 WARN  NUMA performance advisory: bind the daemon and IRQs to the NIC's NUMA node
   nic_numa_node=0
   daemon_fix=numactl --cpunodebind=0 --membind=0 /usr/bin/omega-lb ...
@@ -1244,7 +1343,7 @@ The ring array: 7,500 × 8 bytes = 60KB — exceeds L1 cache (32KB typical).  Af
 few accesses, the ring array is evicted from L1 and most binary-search steps become L2 or
 L3 cache misses (~10ns vs ~1ns for L1 hits).
 
-```
+```text
 At 1M req/s:
   Binary search cost = 13 comparisons × ~10ns (L2 miss) = 130ns per request
   → 13M cache-miss comparisons/s = ~13ms CPU wasted per second on one core
@@ -1254,7 +1353,7 @@ Maglev lookup cost = 1 array index × ~1ns (L2/L1 hit for hot table) = 1ns per r
 ```
 
 | | Before (binary search) | After (Maglev O(1)) |
-|---|---|---|
+| --- | --- | --- |
 | Lookup algorithm | bisect_right, 17-iteration unrolled | `table[hash % 65537]`, 1 instruction |
 | Ring data in cache | 60KB — exceeds 32KB L1, partial L2 | 256KB Maglev table fits in L2 (warm) |
 | Comparisons per lookup | ~13 (log₂ 7500) | 1 |
@@ -1262,6 +1361,7 @@ Maglev lookup cost = 1 array index × ~1ns (L2/L1 hit for hot table) = 1ns per r
 | Distribution quality | Consistent hash (good) | Maglev consistent (≡ 1/N slots move on add/remove) |
 
 **What the code does:**
+
 - `controlplane/internal/ring/maglev.go`: `BuildMaglevTable()` computes a 65,537-slot Maglev
   lookup table from backend IDs and vnode counts.  Called by `Manager.RebuildMaglevTable()`
   after every topology change; result written to the eBPF `maglev_table_map`.
@@ -1304,7 +1404,7 @@ sees encrypted ciphertext — random-looking bytes that will never match any pat
 The result: every TLS connection falls through all rules, `matched_cluster` stays 0, and
 all traffic is forwarded to cluster 0.  No error is emitted.
 
-```
+```text
 Wrong (end-to-end TLS, backend holds cert):
   Client → [TLS ClientHello] → [TLS: AppData=encrypted HTTP bytes] → Backend
                                        ↑
@@ -1318,12 +1418,13 @@ Correct (three models):
 ```
 
 | TLS Mode | LB holds cert | eBPF sees | Path routing | Config |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `passthrough` (default) | No | ciphertext | ✗ silently broken → now explicit default-cluster | `tls.mode: passthrough` |
 | `sni` | No | TLS ClientHello | ✓ hostname-based L4 routing | `tls.mode: sni` |
 | `terminate` (kTLS) | Yes | plaintext URL | ✓ full L7 path routing | `tls.mode: terminate` + `cert_file` + `key_file` |
 
 **What the code does:**
+
 - `controlplane/internal/tls/inspector.go`: `ExtractSNI(data []byte)` parses the TLS
   ClientHello record (which is always sent in plaintext before encryption begins) and
   extracts the `server_name` extension.  Used by `filter_manager` to populate
@@ -1338,7 +1439,7 @@ Correct (three models):
 
 **Decision tree:**
 
-```
+```text
 Is TLS certificate on the LB?
 ├── YES → use mode: terminate (kTLS)
 │         set cert_file + key_file in config
@@ -1410,17 +1511,19 @@ bpftool map dump name events_ringbuf | grep proto
 **Root cause:** eBPF programs run in the kernel — no stdout, stderr, or attach-able debugger. `bpf_trace_printk()` is rate-limited to 1 message/CPU/second, which at 50k RPS means you see **0.002%** of events. Decision context (why backend-3 was chosen, what the circuit state was, how many probes were skipped) is lost immediately.
 
 | Wrong approach | Implemented fix |
-|---|---|
+| --- | --- |
 | `bpf_trace_printk("selected backend %d\n", id)` — silently dropped under load | `events_ringbuf` with structured `event_sample` per routing decision |
 | Log at `zap.Debug` only in Go — not queryable at runtime | `FlightRecorder` ring buffer of last 10,000 decisions in memory |
 | "We'll add observability later" | Every `metrics_collector.bpf.c` event includes: `instance_id`, `circuit_state`, `vnodes_at_select`, `probe_idx`, `reason`, `timestamp_ns` |
 
 **Implemented in:**
+
 - [ebpf/kern/metrics_collector.bpf.c](ebpf/kern/metrics_collector.bpf.c) — extended `event_sample` struct with full decision context
 - [controlplane/internal/metrics/collector.go](controlplane/internal/metrics/collector.go) — real `ringbuf.Reader` consumer (not a stub ticker)
 - [controlplane/internal/observability/flight_recorder.go](controlplane/internal/observability/flight_recorder.go) — in-memory ring buffer of last N decisions
 
 **Operational commands:**
+
 ```bash
 # Development: watch kernel trace output (only useful at low RPS)
 sudo bpftool prog tracelog
@@ -1447,17 +1550,19 @@ journalctl -u omega-lb | grep '"msg":"routing_fallback"'
 **Root cause:** eBPF maps default to `FD_LIFETIME` — they live only as long as an open file descriptor holds them. When the Go daemon exits, all maps are destroyed. The data plane (kernel programs) continues routing but is now working with absent or zeroed maps. On restart, the ring is rebuilt from config defaults (equal weights) rather than from the learned distribution.
 
 | Wrong approach | Implemented fix |
-|---|---|
+| --- | --- |
 | Maps created fresh on every daemon start | `PinAllMaps()` — pins each map to `/sys/fs/bpf/omega/<name>` immediately after loading |
 | Daemon crash → cold ring → thundering herd | `PinOrReuse()` — on restart, opens existing pinned maps; zero data loss |
 | `systemctl restart omega-lb` waits 30s | `Restart=always RestartSec=1s` in systemd unit |
 | Re-attach to cgroup on every restart (brief gap) | On `ReattachReused`: cgroup programs still attached — skip re-attach |
 
 **Implemented in:**
+
 - [controlplane/internal/ebpf/loader.go](controlplane/internal/ebpf/loader.go) — `PinAllMaps()`, `PinOrReuse()`, `openPinnedCollection()`
 - [deploy/baremetal/omega-lb.service](deploy/baremetal/omega-lb.service) — `Restart=always RestartSec=1s`
 
 **Operational commands:**
+
 ```bash
 # Inspect ring state after a crash (maps survived)
 sudo bpftool map dump pinned /sys/fs/bpf/omega/ha_ring_map | head -20
@@ -1489,18 +1594,20 @@ $$\text{series} = |\text{backends}| \times |\text{paths}| \times |\text{status c
 Prometheus stores all active series in RAM. At 15s scrape interval, 500k series = 2M samples/min = ~8GB RSS on a default Prometheus install.
 
 | Wrong approach | Implemented fix |
-|---|---|
+| --- | --- |
 | `{backend_ip, service, method, path, status}` labels | Only `{backend_id, service_id}` on per-request metrics |
 | Path label: `/api/v1/users/123456` per request | `AggregatePath()`: `/api/v1/users/{id}` (collapses per-user to per-route) |
 | No cap on distinct label values | `CardinalityBudget` — max 50 values per dimension; new values → `_overflow` |
 | No visibility into cardinality pressure | `omega_lb_cardinality_overflows_total` metric — alert when > 0/min |
 
 **Implemented in:**
+
 - [controlplane/internal/metrics/cardinality.go](controlplane/internal/metrics/cardinality.go) — `CardinalityBudget`, `AggregatePath()`
 - [controlplane/internal/telemetry/exporter.go](controlplane/internal/telemetry/exporter.go) — budget wired; only `backend_id` emitted as label
 - [controlplane/internal/config/config.go](controlplane/internal/config/config.go) — `MetricsConfig.MaxLabelValuesPerDimension`
 
 **Operational commands:**
+
 ```bash
 # Check current active series count
 curl -s http://localhost:9090/api/v1/query?query=prometheus_tsdb_head_series | jq '.data.result[0].value[1]'
@@ -1529,17 +1636,19 @@ curl -X DELETE 'http://localhost:9090/api/v1/series?match[]=omega_lb_backend_req
 **Root cause:** Models are deployed by overwriting a single ONNX file. No version history. No checksum. No staged promotion. Rollback requires retraining from a checkpoint (30 min minimum). Hot paths and session affinity are broken for the entire rollback window.
 
 | Wrong approach | Implemented fix |
-|---|---|
+| --- | --- |
 | Overwrite `model.onnx` in place | `ModelStore` — each version in its own directory; `registry.json` is the source of truth |
 | No checksum verification | SHA-256 validated on every `Pull()`; mismatch = refuse to load |
 | Rollback = retrain (30-120 min) | `HotReload(path, version)` — swaps KAN actor under `modelMu` lock; zero restart |
 | All-or-nothing deploy | Promotion stages: `shadow` → `canary` (5%) → `production` |
 
 **Implemented in:**
+
 - [controlplane/internal/rl/model_store.go](controlplane/internal/rl/model_store.go) — `ModelStore`, `ModelVersion`, SHA-256 integrity, atomic registry updates
 - [controlplane/internal/rl/agent.go](controlplane/internal/rl/agent.go) — `HotReload()`, `GetModelVersion()`
 
 **Operational commands:**
+
 ```bash
 # List available model versions
 curl http://localhost:9000/admin/mode | jq '.model_version'
@@ -1570,17 +1679,19 @@ omegalb model promote --version=v1.5.0 --to=production
 **Root cause:** RL decision context (OOD score, CBF magnitude, weight vector, circuit state at decision time) is logged at `zap.Debug` level — not emitted at runtime without a log level change and daemon restart. There is no HTTP API to query decision history. The only way to change routing behaviour without a restart is to kill the process.
 
 | Wrong approach | Implemented fix |
-|---|---|
+| --- | --- |
 | `zap.Debug("RL step complete", ...)` — invisible at runtime | `FlightRecorder.Recent(n)` — last 10k decisions queryable via HTTP |
 | No mode switch → must kill process to stop RL | `POST /admin/mode {"mode":"ASSISTED"}` — bypass KAN in < 1 second |
 | No static override during maintenance | `POST /admin/mode {"mode":"MANUAL","weights":[0.5,0.3,0.2]}` |
 | SRE must know Go internals to understand why | `/admin/explain/recent` returns plain JSON with human-readable `reason` field |
 
 **Implemented in:**
+
 - [controlplane/internal/admin/server.go](controlplane/internal/admin/server.go) — `GET /admin/explain/recent`, `GET /admin/explain/backend`, `GET/POST /admin/mode`, `GET /admin/healthz`
 - [controlplane/internal/rl/agent.go](controlplane/internal/rl/agent.go) — `AgentMode` (`AUTO`/`ASSISTED`/`MANUAL`), `SetMode()`, `GetMode()`
 
 **Operational runbook (incident scenario):**
+
 ```bash
 # Step 1: Is the daemon alive?
 curl http://localhost:9000/admin/healthz
@@ -1629,13 +1740,13 @@ curl http://localhost:9000/admin/mode | jq '{mode, model_version}'
 **Root cause:** The daemon writes to the ring in-memory first, then pushes to eBPF. If it crashes between those two steps, eBPF holds the old state and the ring holds the new — permanently, until the next full restart or manual intervention.
 
 | | Wrong | Right |
-|---|---|---|
+| --- | --- | --- |
 | **Pattern** | `ring.AddBackend(b)` then crash → eBPF not updated | WAL records intent before applying; startup reconciles from eBPF |
 | **Code** | `ring/ring.go` `AddBackend` alone | `ring/wal.go` + `ring/reconcile.go` |
 
 **How it works:**
 
-```
+```text
 1. Write WAL entry (fsync) → mutation is durable
 2. Apply to ring in-memory
 3. Push to eBPF
@@ -1648,12 +1759,14 @@ Startup:
 ```
 
 **WAL file format** (`/var/lib/omega-lb/ring.wal`):
+
 ```jsonl
 {"seq":1,"op":"add","id":42,"committed":true}
 {"seq":2,"op":"set_vnode","id":17,"vnodes":120,"committed":false}  ← replay this
 ```
 
 **Operational:**
+
 ```bash
 # Check WAL for uncommitted entries
 cat /var/lib/omega-lb/ring.wal | python3 -c "import sys,json; [print(l) for l in sys.stdin if not json.loads(l)['committed']]"
@@ -1675,7 +1788,7 @@ systemctl restart omega-lb
 **Root cause:** H&A vnode adjustment moves token ranges from backend A to backend B. Sessions that were affined to A are now routed to B, which has no session state. For stateless services this is fine; for stateful services it silently corrupts in-flight sessions.
 
 | | Wrong | Right |
-|---|---|---|
+| --- | --- | --- |
 | **Pattern** | All routing through H&A ring | Stateful sessions bypass ring via `AffinityTable` |
 | **Code** | `ring.Route(hash)` for all requests | `ring.RouteStateful(sessionKey, fallbackHash)` |
 | **Adjustment** | H&A freely moves all vnodes | `Backend.Stateful=true` → H&A skips this backend |
@@ -1697,13 +1810,14 @@ ring.Affinity().Expire(sessionKey)
 **Classifying services:**
 
 | Service type | `Stateful` flag | Routing |
-|---|---|---|
+| --- | --- | --- |
 | REST API, read replicas, CDN | `false` | H&A ring with adjustment |
 | Auth sessions, JWT signing | `true` | AffinityTable; H&A skip |
 | WebSocket, gRPC streams | `true` | AffinityTable; H&A skip |
 | PostgreSQL primary | `true` | AffinityTable; H&A skip |
 
 **Operational:**
+
 ```bash
 # Check affinity table size (via admin API or log grep)
 grep "affinity table GC" /var/log/omega-lb.log | tail -5
@@ -1723,13 +1837,13 @@ grep "affinity table GC" /var/log/omega-lb.log | tail -5
 **Fix:** eBPF circuit breaker — the kernel counts consecutive 5xx responses per backend. At 5 consecutive errors (~50ms for typical 10ms requests), it writes `CIRCUIT_OPEN` to `circuit_state_map`. The `lb_policy` program reads this map on every probe and skips OPEN backends in the same packet path (~50μs).
 
 | | Detection latency | Scope |
-|---|---|---|
+| --- | --- | --- |
 | Health checker only | 6 seconds | Per health check cycle |
 | Circuit breaker + health checker | ~50ms kernel + 1s CP poll | Per request |
 
 **State machine:**
 
-```
+```text
   5 consecutive 5xx        10s elapsed      probe success
 CLOSED ──────────────► OPEN ──────────► HALF_OPEN ──────────► CLOSED
                            ◄──────────────────────────────────
@@ -1737,6 +1851,7 @@ CLOSED ──────────────► OPEN ───────�
 ```
 
 **Circuit breaker constants** (omega_maps.h):
+
 ```c
 #define CIRCUIT_CLOSED           0
 #define CIRCUIT_OPEN             1
@@ -1745,6 +1860,7 @@ CLOSED ──────────────► OPEN ───────�
 ```
 
 **Operational:**
+
 ```bash
 # Check circuit states for all backends
 bpftool map dump pinned /sys/fs/bpf/omega/circuit_state_map
@@ -1768,6 +1884,7 @@ grep "circuit" /var/log/omega-lb.log | grep -E "OPEN|HALF_OPEN|CLOSED"
 **Fix in two parts:**
 
 **Part A — TCP Keepalive (eBPF):** `SEC("sockops") int isock_keepalive()` in `connection_relay.bpf.c`:
+
 ```c
 TCP_KEEPIDLE  = 5s   // first probe after 5s silence
 TCP_KEEPINTVL = 2s   // subsequent probes every 2s
@@ -1776,12 +1893,14 @@ TCP_KEEPCNT   = 3    // 3 probes → dead → RST + kernel closes fd
 ```
 
 **Part B — Pool Monitor (Go):** `ring/pool_monitor.go` checks every 30s:
-```
+
+```text
 pool_hit_rate = len(isock_pool) / len(healthy_backends)
 if hit_rate < 0.95: log.Warn + operational instructions
 ```
 
 **Operational:**
+
 ```bash
 # Check pool size vs healthy backend count
 bpftool map dump pinned /sys/fs/bpf/omega/isock_pool | grep -c key
@@ -1804,7 +1923,7 @@ curl -X POST http://localhost:9000/admin/reconnect-pool
 
 **Fix:** Slow-start vnode restoration. Instead of restoring all vnodes immediately, add them in batches:
 
-```
+```text
 Prerequisite: 60 consecutive successful health checks (default ~2 min) before starting.
 Batch size:   15 vnodes per tick (10% of 150)
 Interval:     30 seconds
@@ -1815,7 +1934,7 @@ Total ramp:   ~4.5 minutes at full batch rate
 **Timeline:**
 
 | Time | Vnodes | Traffic % | Condition |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | t=0 (UP) | 0 | 0% | waiting for 60 health check successes |
 | t=2min | 0 | 0% | 60th consecutive success → BeginSlowStart() |
 | t=2min+0s | 15 | 10% | Tick 1 |
@@ -1824,6 +1943,7 @@ Total ramp:   ~4.5 minutes at full batch rate
 | t=2min+4.5min | 150 | 100% | Slow-start complete |
 
 **Operational:**
+
 ```bash
 # Monitor slow-start progress
 grep "slow-start" /var/log/omega-lb.log | grep "backend_id=<id>"
@@ -1852,13 +1972,14 @@ health:
 **Root cause:** Each node runs an independent ring.Manager. Without coordination, nodes independently diverge: different vnode counts, different health states, different RL decisions.
 
 **Fix:** Distributed consensus via etcd:
+
 - **Leader election:** one node acquires a TTL-based lock at `/omega-lb/leader`.
 - **Leader publishes** canonical ring state to `/omega-lb/ring-state` every `TTL/2` seconds.
 - **Followers watch** `/omega-lb/ring-state` and apply `RingStateSnapshot` atomically.
 - **Monotonic versioning:** snapshots older than the last applied are discarded.
 - **Leader failover:** lock expires after TTL; another node acquires it within 2 TTL.
 
-```
+```text
 Node A (Leader)       etcd                Node B (Follower)
 ────────────────      ────────────         ─────────────────
 ring.Manager ──PUT──► /omega-lb/           WATCH ──► applySnapshot()
@@ -1866,6 +1987,7 @@ ring.Manager ──PUT──► /omega-lb/           WATCH ──► applySnapsh
 ```
 
 **Operational:**
+
 ```bash
 # Check which node is leader
 etcdctl get /omega-lb/leader
@@ -1884,6 +2006,7 @@ etcdctl endpoint health --endpoints=$ETCD_ENDPOINTS
 ```
 
 **Configuration** (`omega-lb.yaml`):
+
 ```yaml
 consensus:
   enabled: true
@@ -1910,6 +2033,7 @@ consensus:
 ### 1. eBPF Verifier Rejections
 
 **Symptom:** `bpf_prog_load()` fails with messages such as:
+
 - `"back-edge from insn 47 to 23"` — unbounded loop detected
 - `"R1 invalid mem access 'inv'"` — pointer arithmetic error
 - `"combined stack size of 3 calls is 672. Too large"` — tail-call stack overflow
@@ -1918,12 +2042,14 @@ consensus:
 The kernel eBPF verifier is a static analyser that re-runs on every `bpf_prog_load()` call.  It rejects any program with unbounded loops, out-of-bounds memory access, or instruction count over the limit (~1 M on kernel 6.x, much lower on 5.10).  It does **not** give you a line number.  It also tracks *path complexity* — the number of distinct execution paths the verifier must explore.  On kernel 5.10 the limit is 2²⁰ paths.  A loop with only 5 iterations can hit this if it contains nested conditional branches.
 
 **What the code does:**
+
 - Every loop uses `#pragma unroll` with an explicit bound (`bisect_right`: 17 iters / 68 paths; probe loop: 64 iters / ≤ 192 paths).
 - On kernels ≥ 5.17, build with `KERNEL_VARIANT=517` to enable `bpf_loop()` which communicates the bound directly to the verifier without path explosion.
 - Array accesses use explicit bitmask guards (`& 0xFFFF`) so the verifier can prove bounds.
 - `ring_meta_map` stores its 256 KB value in kernel map memory.  `bpf_map_lookup_elem` returns a pointer into that memory; the value never touches the 512-byte BPF stack.
 
 **Operational commands:**
+
 ```bash
 # Inspect compiled bytecode alongside C source (audit instruction count)
 make verify KERNEL_VARIANT=515
@@ -1934,6 +2060,7 @@ make test-load
 # Build all three variants in CI to catch cross-kernel regressions
 make ci-matrix
 ```
+
 **CI guidance:** Pin kernel images explicitly in CI — the verifier changes between minor releases.  Test on 5.15, 5.17, 5.19, and 6.1.
 
 ---
@@ -1945,26 +2072,30 @@ make ci-matrix
 **Why it happens (two separate races):**
 
 *Race A — active_reqs counter:*
+
 ```c
 // WRONG — non-atomic read-modify-write on a shared HASH map
 val = bpf_map_lookup_elem(&instance_registry, &id);
 val->active_reqs++;          // CPU-B reads old value between these two ops
 bpf_map_update_elem(...);    // both CPUs write the same incremented value
 ```
+
 Two CPUs execute the read and the write independently.  Both see the same stale counter and both route to an overloaded backend.
 
 *Race B — EWMA latency update:*
+
 ```c
 // WRONG — non-atomic compound update on a shared HASH map
 stats->ewma_latency_ns = (stats->ewma_latency_ns * 7 + elapsed) >> 3;
 stats->last_req_ts_ns  = now;
 ```
+
 Two CPUs simultaneously read the same old `ewma_latency_ns`, compute divergent values, and each overwrites the other — producing permanently corrupted latency data fed to the RL agent.
 
 **What the code does:**
 
 | Counter | Fix | File |
-|---|---|---|
+| --- | --- | --- |
 | `active_reqs` | `__sync_fetch_and_add()` — compiles to `LOCK XADD` atomic CPU instruction | `lb_policy.bpf.c` |
 | EWMA latency / request count | `BPF_MAP_TYPE_PERCPU_HASH` — each CPU owns its own slot; no cross-CPU access | `metrics_collector.bpf.c` |
 
@@ -1977,11 +2108,13 @@ For `BPF_MAP_TYPE_PERCPU_HASH`: `bpf_map_lookup_elem()` returns a pointer to the
 **Symptom:** After a routing policy update, packet captures show a 10–100 µs gap during which connections are passed to the kernel's default handling (or dropped), causing a burst of errors in monitoring.
 
 **Why it happens:**
+
 ```c
 // WRONG — detach then attach creates a gap window
 bpf_link_detach(old_link);
 new_link = bpf_prog_attach(new_prog, cgroup_fd, BPF_CGROUP_SOCK_OPS, 0);
 ```
+
 Between the detach and attach calls, no program handles in-flight packets.  At 100 k req/s, a 100 µs window drops approximately 10 requests.
 
 **What the code does:**  
@@ -2006,13 +2139,14 @@ if err := ebpf.AtomicProgSwap(activeLink, newProg, log); err != nil {
 `BPF_PROG_TYPE_SOCK_OPS` programs must be attached to the **cgroup v2 unified hierarchy**.  On cgroup v1 hosts (most pre-2021 distros, some older Kubernetes nodes), the attach call succeeds but attaches to the wrong hierarchy and the hook never fires.
 
 Detection logic:
+
 - cgroup v2 present: `/sys/fs/cgroup/cgroup.controllers` exists
 - cgroup v1 only: `/sys/fs/cgroup/cpu` exists but `cgroup.controllers` is absent
 
 **What the code does:**  
 `ebpf.AssertCgroupV2()` in `loader.go` detects the hierarchy at daemon startup and **hard-fails** with an actionable error message before loading any program:
 
-```
+```text
 startup check: host uses cgroup v1; BPF_PROG_TYPE_SOCK_OPS requires cgroup v2.
 On cgroup v1 hosts load the TC-hook variant (KERNEL_VARIANT=tc) and attach
 via BPF_PROG_TYPE_SCHED_CLS instead.
@@ -2034,7 +2168,7 @@ eBPF maps reside in kernel memory (pinned pages), not in process heap.  A node's
 **Expected kernel memory footprint (32-vCPU node):**
 
 | Map | Type | Entries | Value | Per-CPU | Total |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | `ha_ring_map` | `HASH` | 65 536 | 8 B | no | 512 KB |
 | `ring_meta_map` | `ARRAY` | 1 | 262 KB | no | 262 KB |
 | `instance_registry` | `HASH` | 8 192 | 28 B | no | 224 KB |
@@ -2060,13 +2194,14 @@ eBPF helper functions are added per kernel point release.  A program compiled wi
 **Compatibility matrix:**
 
 | Variant | Kernel | Key features | Makefile flag |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `60` | ≥ 6.0 | `bpf_loop`, `kptr_xchg`, ringbuf in sock_ops | `KERNEL_VARIANT=60` |
 | `517` | 5.17–5.x | `bpf_loop` only | `KERNEL_VARIANT=517` |
 | `515` | 5.15–5.16 | `#pragma unroll` only (default) | `KERNEL_VARIANT=515` |
 | `tc` | < 5.15 | TC-hook fallback (`SCHED_CLS`); no `sock_ops` | Not supported |
 
 **What the code does:**
+
 - `ebpf.ParseKernelVersion()` reads `/proc/sys/kernel/osrelease` at startup.
 - `ebpf.CompatVariant()` selects the appropriate variant string.
 - `ebpf.AssertKernelVersion()` hard-fails if the host is below 5.15.
@@ -2085,9 +2220,10 @@ The kernel enforces a hard limit of **33 total tail calls** across any chain.  W
 
 Core chain depth:
 
-```
+```text
 filter_manager(0) → route_manager(1) → lb_policy(2) → connection_relay(3) → metrics_collector(4)
 ```
+
 Maximum depth at `metrics_collector` entry: **4**.  Kernel limit: 33.  Current budget: 29 remaining.
 
 **What the code does:**  
@@ -2105,7 +2241,7 @@ if (depth) {
 `filter_manager` (chain head) resets the counter to 0 on every entry.  Constants in `omega_maps.h`:
 
 | Constant | Value | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `TAIL_CALL_DEPTH_MAX` | 30 | Abort threshold (3 below kernel hard limit) |
 | `TAIL_CALL_DEPTH_WARN` | 25 | Warning threshold for future telemetry |
 

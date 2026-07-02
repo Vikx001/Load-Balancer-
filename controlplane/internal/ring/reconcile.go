@@ -17,16 +17,17 @@ import (
 // produce different vnode assignments than the kernel is using.
 //
 // The eBPF map is the single source of truth because:
-//   a) It is persistent across daemon restarts (kernel memory survives process death).
-//   b) It is what the kernel is actually using to make routing decisions.
-//   c) The WAL may have entries the previous daemon wrote but never pushed.
+//
+//	a) It is persistent across daemon restarts (kernel memory survives process death).
+//	b) It is what the kernel is actually using to make routing decisions.
+//	c) The WAL may have entries the previous daemon wrote but never pushed.
 //
 // Reconciliation procedure:
-//   1. Open ha_ring_map (pinned): position → instance_id
-//   2. Open instance_registry (pinned): instance_id → backend_entry
-//   3. Count how many ring positions map to each instance_id (= vnode count).
-//   4. For each instance_id, look up backend IP/port from instance_registry.
-//   5. Rebuild in-memory backends map and ring from these counts.
+//  1. Open ha_ring_map (pinned): position → instance_id
+//  2. Open instance_registry (pinned): instance_id → backend_entry
+//  3. Count how many ring positions map to each instance_id (= vnode count).
+//  4. For each instance_id, look up backend IP/port from instance_registry.
+//  5. Rebuild in-memory backends map and ring from these counts.
 //
 // This function must be called before Run() on daemon startup.
 func (m *Manager) ReconcileFromEBPF(pinPath string, log *zap.Logger) error {
