@@ -8,6 +8,7 @@
   --accent: #4fd1a5;
   --accent-2: #5b8cff;
   --danger: #ff6b6b;
+  --warning: #f0c674;
   --radius: 10px;
   --max-width: 1080px;
   font-size: 16px;
@@ -41,6 +42,7 @@ body {
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible,
+input:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -263,21 +265,31 @@ code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
 
 .btn-ghost:hover { color: var(--text); border-color: var(--accent-2); }
 
+.magnetic {
+  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
 /* ---------- Hero ---------- */
 .hero {
   position: relative;
   overflow: hidden;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
 }
 
+.hero-webgl,
 .hero-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   z-index: 0;
-  opacity: 0.55;
   pointer-events: none;
 }
+
+.hero-webgl { opacity: 0.7; }
+.hero-canvas { opacity: 0.55; }
 
 .hero-inner {
   position: relative;
@@ -415,6 +427,135 @@ code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
   margin-bottom: 32px;
 }
 
+/* ---------- Playground ---------- */
+.playground {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.playground-stage {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+}
+
+#playground-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.playground-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.metric-pill {
+  background: rgba(10, 14, 20, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  backdrop-filter: blur(4px);
+}
+
+.metric-label { color: var(--text-dim); }
+.metric-value { color: var(--accent); font-weight: 700; font-family: "SF Mono", monospace; }
+
+.playground-controls {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-group label,
+.control-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.control-hint {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.control-group input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.backend-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.backend-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 0.85rem;
+}
+
+.backend-toggle:hover { border-color: var(--accent); color: var(--text); }
+.backend-toggle.active { border-color: var(--accent); color: var(--text); background: rgba(79, 209, 165, 0.08); }
+
+.backend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.backend-toggle.active .backend-dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+.playground-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.legend-item { display: flex; align-items: center; gap: 8px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+.legend-dot.client { background: var(--text); }
+.legend-dot.lb { background: var(--accent-2); }
+.legend-dot.backend { background: var(--accent); }
+.legend-dot.dropped { background: var(--danger); }
+
 /* ---------- Proof tabs ---------- */
 .proof-tabs, .roadmap-tabs {
   display: flex;
@@ -482,6 +623,101 @@ code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
 
 .roadmap-panel strong { color: var(--text); }
 
+/* ---------- Interactive pipeline ---------- */
+.pipeline {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.pipeline-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+
+.pipeline-node {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  cursor: default;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.pipeline-node.layer {
+  cursor: pointer;
+}
+
+.pipeline-node.layer:hover,
+.pipeline-node.layer.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(79, 209, 165, 0.1);
+  box-shadow: 0 0 18px rgba(79, 209, 165, 0.12);
+}
+
+.pipeline-node.in,
+.pipeline-node.out {
+  border-color: var(--accent-2);
+  color: var(--text);
+}
+
+.pipeline-arrow {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.pipeline-detail {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  min-height: 160px;
+}
+
+.pipeline-detail-default { color: var(--text-dim); }
+.pipeline-detail-default p { margin: 0; }
+
+.pipeline-detail-content h3 {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.pipeline-detail-content p {
+  color: var(--text-dim);
+  margin: 0 0 14px;
+}
+
+.pipeline-equation {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: "SF Mono", monospace;
+  font-size: 0.85rem;
+  color: #b7f5d8;
+  margin-bottom: 14px;
+  overflow-x: auto;
+}
+
+.pipeline-detail-content ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.pipeline-detail-content li { margin-bottom: 6px; }
+
 /* ---------- Layers accordion ---------- */
 .layers-accordion details {
   background: var(--panel);
@@ -531,8 +767,29 @@ code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
   border-radius: var(--radius);
   padding: 20px;
   overflow-x: auto;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
+
+.mermaid-wrap.interactive .node {
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.mermaid-wrap.interactive .node:hover {
+  filter: drop-shadow(0 0 6px rgba(79, 209, 165, 0.5));
+}
+
+.arch-info {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 32px;
+  min-height: 64px;
+}
+
+.arch-info-default { color: var(--text-dim); margin: 0; }
+.arch-info h4 { margin: 0 0 6px; color: var(--accent); font-size: 1rem; }
+.arch-info p { margin: 0; color: var(--text-dim); font-size: 0.9rem; }
 
 .perf-grid {
   display: grid;
@@ -548,7 +805,10 @@ code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
   padding: 20px;
   text-align: center;
   overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease;
 }
+
+.perf-card:hover { transform: translateY(-4px); border-color: var(--accent); }
 
 .spotlight::before {
   content: "";
@@ -655,6 +915,11 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 /* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .playground { grid-template-columns: 1fr; }
+  .playground-stage { aspect-ratio: 16 / 12; }
+}
+
 @media (max-width: 720px) {
   .nav-toggle { display: flex; }
 
@@ -685,8 +950,13 @@ tbody tr:last-child td { border-bottom: none; }
 
   .nav-links a.active-link::after { display: none; }
 
+  .hero { min-height: auto; }
   .hero h1 { font-size: 2rem; }
   .hero-inner { padding-top: 72px; }
+
+  .pipeline-flow { gap: 8px; }
+  .pipeline-arrow { display: none; }
+  .pipeline-node { font-size: 0.75rem; padding: 6px 10px; }
 }
 
 /* ---------- Reduced motion: disable non-essential animation ---------- */
@@ -709,5 +979,9 @@ tbody tr:last-child td { border-bottom: none; }
     animation: none;
   }
 
-  .hero-canvas { display: none; }
+  .hero-canvas,
+  .hero-webgl { display: none; }
+
+  .magnetic { transition: none; }
+  .perf-card:hover { transform: none; }
 }
