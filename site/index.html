@@ -26,6 +26,7 @@
     </button>
     <ul class="nav-links" id="nav-links">
       <li><a href="#proof">Live Proof</a></li>
+      <li><a href="#playground">Playground</a></li>
       <li><a href="#layers">5 Layers</a></li>
       <li><a href="#architecture">Architecture</a></li>
       <li><a href="#security">Admin &amp; Security</a></li>
@@ -42,6 +43,7 @@
 
   <!-- ============ HERO ============ -->
   <section class="hero">
+    <div id="hero-webgl" class="hero-webgl" aria-hidden="true"></div>
     <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
     <div class="hero-inner container">
     <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span> Open source · MIT licensed · Runs entirely on your machine</p>
@@ -55,8 +57,8 @@
     </p>
 
     <div class="hero-ctas">
-      <a class="btn btn-primary" href="#proof">See the live proof →</a>
-      <a class="btn btn-outline" href="https://github.com/Vikx001/Load-Balancer-" target="_blank" rel="noopener">View source on GitHub</a>
+      <a class="btn btn-primary magnetic" href="#playground">Try the live simulation →</a>
+      <a class="btn btn-outline magnetic" href="https://github.com/Vikx001/Load-Balancer-" target="_blank" rel="noopener">View source on GitHub</a>
     </div>
 
     <div class="code-block hero-code" data-copy>
@@ -129,42 +131,129 @@ cd "Load-Balancer-"
     </div>
   </section>
 
+  <!-- ============ PLAYGROUND ============ -->
+  <section id="playground" class="section container">
+    <h2 class="section-title">Live load-balancer playground</h2>
+    <p class="section-sub">
+      This is a real-time simulation of Omega-LB's routing pipeline running in your browser.
+      Add traffic, fail a backend, and watch the algorithms reroute, shed load, and rebalance.
+    </p>
+
+    <div class="playground">
+      <div class="playground-stage">
+        <canvas id="playground-canvas" aria-label="Live load balancer simulation showing clients, load balancer, and backends"></canvas>
+        <div class="playground-overlay" id="playground-overlay">
+          <div class="metric-pill"><span class="metric-label">RPS</span><span class="metric-value" id="pg-rps">0</span></div>
+          <div class="metric-pill"><span class="metric-label">P99 latency</span><span class="metric-value" id="pg-p99">0ms</span></div>
+          <div class="metric-pill"><span class="metric-label">Healthy</span><span class="metric-value" id="pg-healthy">4/4</span></div>
+          <div class="metric-pill"><span class="metric-label">Dropped</span><span class="metric-value" id="pg-dropped">0</span></div>
+        </div>
+      </div>
+
+      <div class="playground-controls">
+        <div class="control-group">
+          <label for="pg-load">Traffic load</label>
+          <input id="pg-load" type="range" min="0" max="100" value="30" aria-describedby="pg-load-help" />
+          <span id="pg-load-help" class="control-hint">Drag to increase request rate</span>
+        </div>
+
+        <div class="control-group backend-toggles">
+          <span class="control-label">Backend health</span>
+          <button class="backend-toggle active" data-backend="0" type="button" aria-pressed="true">
+            <span class="backend-dot"></span> backend-1
+          </button>
+          <button class="backend-toggle active" data-backend="1" type="button" aria-pressed="true">
+            <span class="backend-dot"></span> backend-2
+          </button>
+          <button class="backend-toggle active" data-backend="2" type="button" aria-pressed="true">
+            <span class="backend-dot"></span> backend-3
+          </button>
+          <button class="backend-toggle active" data-backend="3" type="button" aria-pressed="true">
+            <span class="backend-dot"></span> backend-4
+          </button>
+        </div>
+
+        <div class="control-group">
+          <button id="pg-burst" class="btn btn-primary" type="button">Trigger traffic burst</button>
+          <span class="control-hint">Simulates a sudden 5× spike for 3 seconds</span>
+        </div>
+
+        <div class="playground-legend">
+          <div class="legend-item"><span class="legend-dot client"></span> Client request</div>
+          <div class="legend-item"><span class="legend-dot lb"></span> Load balancer decision</div>
+          <div class="legend-item"><span class="legend-dot backend"></span> Successful backend</div>
+          <div class="legend-item"><span class="legend-dot dropped"></span> Dropped / rate-limited</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ 5 LAYERS ============ -->
   <section id="layers" class="section container">
     <h2 class="section-title">Five decision-makers, one routing pipeline</h2>
-    <p class="section-sub">Each layer passes a routing decision to the next — click a layer to see what it actually does.</p>
+    <p class="section-sub">Each layer passes a routing decision to the next — hover or click a layer to see the math and the decision flow.</p>
 
-    <div class="layers-accordion">
-      <details open class="reveal">
-        <summary><span class="layer-num">01</span> Consistent Hash Ring <span class="layer-tag">H&amp;A, OPODIS 2024</span></summary>
-        <div class="layer-body">
-          <p>MurmurHash3 with 150 virtual nodes per backend. Demand-aware, bounded-load redistribution (β = 1.25) keeps the same client mapped to the same backend while automatically shrinking the "slice" of overloaded servers.</p>
+    <div class="pipeline" role="region" aria-label="Interactive routing pipeline">
+      <div class="pipeline-flow" aria-hidden="true">
+        <div class="pipeline-node in">Client</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node layer" data-layer="1">Hash Ring</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node layer" data-layer="2">CBF Safety</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node layer" data-layer="3">KAN Policy</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node layer" data-layer="4">DQN RL</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node layer" data-layer="5">Rebalance</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node out">Backend</div>
+      </div>
+
+      <div class="pipeline-detail" id="pipeline-detail">
+        <div class="pipeline-detail-default">
+          <p>Hover or click any layer above to see the exact algorithm, equation, and decision it contributes to the routing pipeline.</p>
         </div>
-      </details>
-      <details class="reveal">
-        <summary><span class="layer-num">02</span> CBF Safety Projection <span class="layer-tag">Huawei / IEEE 2024</span></summary>
-        <div class="layer-body">
-          <p>A Control Barrier Function caps utilisation at 80%: <code>w_i = max(0, 1 − 0.42·cpu − 0.31·lat − 10·err) × h_i</code>, projected onto a safe simplex via OSQP. If the routing pipeline suggests something unsafe, this layer mathematically pulls it back.</p>
+        <div class="pipeline-detail-content" id="pipeline-detail-content" hidden>
+          <h3 id="pd-title"></h3>
+          <p id="pd-desc"></p>
+          <div class="pipeline-equation" id="pd-equation"></div>
+          <ul id="pd-bullets"></ul>
         </div>
-      </details>
-      <details class="reveal">
-        <summary><span class="layer-num">03</span> KAN Interpretable Policy <span class="layer-tag">arXiv 2505.14459, 2025</span></summary>
-        <div class="layer-body">
-          <p>A Kolmogorov–Arnold Network with B-spline edges, hot-reloaded from ONNX. Unlike a black-box neural net, it can express its own decision as a readable symbolic formula — and gracefully falls back to that formula when no trained model is present.</p>
-        </div>
-      </details>
-      <details class="reveal">
-        <summary><span class="layer-num">04</span> DQN Adaptive Rate Limiting <span class="layer-tag">arXiv 2511.03279</span></summary>
-        <div class="layer-body">
-          <p>Per-backend token buckets governed by an ε-greedy DQN policy choosing between Expanding ↑, Holding —, and Throttling ↓, clamped to <code>[min_rps, max_rps]</code> from config.</p>
-        </div>
-      </details>
-      <details class="reveal">
-        <summary><span class="layer-num">05</span> Proactive Pre-distribution <span class="layer-tag">Anticipation paper, 2025</span></summary>
-        <div class="layer-body">
-          <p>A 30-second load-slope lookahead rebalances vnode counts <em>before</em> saturation happens, instead of reacting after the fact.</p>
-        </div>
-      </details>
+      </div>
+
+      <div class="layers-accordion">
+        <details open class="reveal">
+          <summary><span class="layer-num">01</span> Consistent Hash Ring <span class="layer-tag">H&amp;A, OPODIS 2024</span></summary>
+          <div class="layer-body">
+            <p>MurmurHash3 with 150 virtual nodes per backend. Demand-aware, bounded-load redistribution (β = 1.25) keeps the same client mapped to the same backend while automatically shrinking the "slice" of overloaded servers.</p>
+          </div>
+        </details>
+        <details class="reveal">
+          <summary><span class="layer-num">02</span> CBF Safety Projection <span class="layer-tag">Huawei / IEEE 2024</span></summary>
+          <div class="layer-body">
+            <p>A Control Barrier Function caps utilisation at 80%: <code>w_i = max(0, 1 − 0.42·cpu − 0.31·lat − 10·err) × h_i</code>, projected onto a safe simplex via OSQP. If the routing pipeline suggests something unsafe, this layer mathematically pulls it back.</p>
+          </div>
+        </details>
+        <details class="reveal">
+          <summary><span class="layer-num">03</span> KAN Interpretable Policy <span class="layer-tag">arXiv 2505.14459, 2025</span></summary>
+          <div class="layer-body">
+            <p>A Kolmogorov–Arnold Network with B-spline edges, hot-reloaded from ONNX. Unlike a black-box neural net, it can express its own decision as a readable symbolic formula — and gracefully falls back to that formula when no trained model is present.</p>
+          </div>
+        </details>
+        <details class="reveal">
+          <summary><span class="layer-num">04</span> DQN Adaptive Rate Limiting <span class="layer-tag">arXiv 2511.03279</span></summary>
+          <div class="layer-body">
+            <p>Per-backend token buckets governed by an ε-greedy DQN policy choosing between Expanding ↑, Holding —, and Throttling ↓, clamped to <code>[min_rps, max_rps]</code> from config.</p>
+          </div>
+        </details>
+        <details class="reveal">
+          <summary><span class="layer-num">05</span> Proactive Pre-distribution <span class="layer-tag">Anticipation paper, 2025</span></summary>
+          <div class="layer-body">
+            <p>A 30-second load-slope lookahead rebalances vnode counts <em>before</em> saturation happens, instead of reacting after the fact.</p>
+          </div>
+        </details>
+      </div>
     </div>
   </section>
 
@@ -174,9 +263,9 @@ cd "Load-Balancer-"
     <p class="section-sub">
       The exact diagram from
       <a href="https://github.com/Vikx001/Load-Balancer-/blob/main/docs/architecture.md" target="_blank" rel="noopener">docs/architecture.md</a>,
-      rendered live from source.
+      rendered live from source. Click any node to inspect its role.
     </p>
-    <div class="mermaid-wrap">
+    <div class="mermaid-wrap interactive">
       <pre class="mermaid">
 flowchart LR
   subgraph HOST[Host Workstation]
@@ -232,6 +321,9 @@ flowchart LR
   APP3 --> STORE
   APP4 --> STORE
       </pre>
+    </div>
+    <div class="arch-info" id="arch-info" aria-live="polite">
+      <p class="arch-info-default">Click any node in the diagram above to see what it does.</p>
     </div>
 
     <div class="perf-grid">
@@ -364,8 +456,8 @@ curl -H "Authorization: Bearer $OMEGA_ADMIN_TOKEN" \
     <h2 class="section-title">Run it yourself in under a minute</h2>
     <p class="section-sub">Python 3.13+, no Docker, no Kubernetes, no cloud account required for the local demo stack.</p>
     <div class="hero-ctas">
-      <a class="btn btn-primary" href="https://github.com/Vikx001/Load-Balancer-#quick-start-standalone-no-linux-required" target="_blank" rel="noopener">Read the full quick start →</a>
-      <a class="btn btn-outline" href="https://github.com/Vikx001/Load-Balancer-/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+      <a class="btn btn-primary magnetic" href="https://github.com/Vikx001/Load-Balancer-#quick-start-standalone-no-linux-required" target="_blank" rel="noopener">Read the full quick start →</a>
+      <a class="btn btn-outline magnetic" href="https://github.com/Vikx001/Load-Balancer-/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
     </div>
   </section>
 
@@ -384,6 +476,7 @@ curl -H "Authorization: Bearer $OMEGA_ADMIN_TOKEN" \
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
