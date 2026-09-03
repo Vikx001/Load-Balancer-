@@ -92,13 +92,24 @@ function initMermaid() {
     startOnLoad: true,
     theme: "dark",
     themeVariables: {
-      background: "#131926",
-      primaryColor: "#1a2233",
+      background: "#0a0e14",
+      mainBkg: "#131926",
+      primaryColor: "#131926",
       primaryTextColor: "#dbe2ef",
-      primaryBorderColor: "#232b3a",
-      lineColor: "#5b8cff",
+      primaryBorderColor: "#2c3648",
       secondaryColor: "#10151f",
+      secondaryBorderColor: "#232b3a",
       tertiaryColor: "#10151f",
+      tertiaryBorderColor: "#232b3a",
+      lineColor: "#5b8cff",
+      textColor: "#dbe2ef",
+      nodeTextColor: "#dbe2ef",
+      nodeBorder: "#2c3648",
+      clusterBkg: "#0e131d",
+      clusterBorder: "#26314a",
+      titleColor: "#dbe2ef",
+      edgeLabelBackground: "#0e131d",
+      fontFamily: "'SF Mono', ui-monospace, Menlo, Consolas, monospace",
     },
     securityLevel: "strict",
   });
@@ -195,11 +206,11 @@ function initScrollReveal() {
         }
       });
     },
-    { threshold: 0.15, rootMargin: "0px 0px -40px 0px" }
+    { threshold: 0.01, rootMargin: "0px 0px 150px 0px" }
   );
 
   items.forEach((el, i) => {
-    el.style.transitionDelay = `${Math.min(i % 5, 4) * 70}ms`;
+    el.style.transitionDelay = `${Math.min(i % 5, 4) * 50}ms`;
     observer.observe(el);
   });
 }
@@ -470,6 +481,7 @@ function initPlayground() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const scenarioButtons = Array.from(document.querySelectorAll(".scenario-chip[data-scenario]"));
   const loadInput = document.getElementById("pg-load");
   const burstBtn = document.getElementById("pg-burst");
   const backendToggles = document.querySelectorAll(".backend-toggle");
@@ -477,6 +489,23 @@ function initPlayground() {
   const p99El = document.getElementById("pg-p99");
   const healthyEl = document.getElementById("pg-healthy");
   const droppedEl = document.getElementById("pg-dropped");
+  const modeEl = document.getElementById("pg-mode");
+  const pathEl = document.getElementById("pg-path");
+  const saturationEl = document.getElementById("pg-saturation");
+  const feedEl = document.getElementById("pg-feed");
+  const sparkCanvas = document.getElementById("pg-latency-spark");
+  const sparkCtx = sparkCanvas ? sparkCanvas.getContext("2d") : null;
+  const replayBtn = document.getElementById("pg-replay");
+  const shareBtn = document.getElementById("pg-share");
+  const playPauseBtn = document.getElementById("pg-playpause");
+  const speedButtons = Array.from(document.querySelectorAll(".speed-chip"));
+  const backendBars = Array.from({ length: 4 }, (_, id) => ({
+    id,
+    fill: document.querySelector(`.backend-load-fill[data-backend-fill="${id}"]`),
+    pct: document.querySelector(`.backend-load-pct[data-backend-pct="${id}"]`),
+  }));
+
+  const SCENARIO_KEYS = { balanced: "Balanced", spike: "Traffic spike", failover: "Failover", recovery: "Recovery" };
 
   let width = 0;
   let height = 0;
@@ -484,10 +513,10 @@ function initPlayground() {
   let animationId = null;
 
   const backends = [
-    { id: 0, x: 0, y: 0, healthy: true, load: 0, latency: 20 },
-    { id: 1, x: 0, y: 0, healthy: true, load: 0, latency: 25 },
-    { id: 2, x: 0, y: 0, healthy: true, load: 0, latency: 22 },
-    { id: 3, x: 0, y: 0, healthy: true, load: 0, latency: 28 },
+    { id: 0, x: 0, y: 0, healthy: true, load: 0, latency: 20, hue: 175 },
+    { id: 1, x: 0, y: 0, healthy: true, load: 0, latency: 25, hue: 195 },
+    { id: 2, x: 0, y: 0, healthy: true, load: 0, latency: 22, hue: 155 },
+    { id: 3, x: 0, y: 0, healthy: true, load: 0, latency: 28, hue: 210 },
   ];
 
   let requests = [];
@@ -495,6 +524,82 @@ function initPlayground() {
   let baseLoad = 30;
   let burstMultiplier = 1;
   let burstTimer = 0;
+  let currentScenario = "Balanced";
+  let currentActivePath = "client → lb → backend-1";
+  let simSpeed = 1;
+  let paused = false;
+  const feedLines = [];
+  const LATENCY_WINDOW = 40;
+
+  function logFeed(kind, text, tone = "normal") {
+    feedLines.unshift({ kind, text, tone, at: Date.now() });
+    feedLines.splice(5);
+    if (!feedEl) return;
+
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${kind}</strong><span>${text}</span>`;
+    feedEl.prepend(li);
+    while (feedEl.children.length > 5) {
+      feedEl.removeChild(feedEl.lastElementChild);
+    }
+  }
+
+  function scenarioKeyFor(readable) {
+    return Object.keys(SCENARIO_KEYS).find((key) => SCENARIO_KEYS[key] === readable) || "balanced";
+  }
+
+  function syncHash(readable) {
+    const key = scenarioKeyFor(readable);
+    history.replaceState(null, "", `#playground=${key}`);
+  }
+
+  function setScenario(nextScenario, options = {}) {
+    currentScenario = nextScenario;
+    scenarioButtons.forEach((button) => {
+      button.classList.toggle("active", button.dataset.scenario === scenarioKeyFor(nextScenario));
+    });
+    if (!options.skipHash) syncHash(nextScenario);
+
+    if (nextScenario === "Balanced") {
+      baseLoad = 30;
+      burstMultiplier = 1;
+      backends.forEach((backend) => {
+        backend.healthy = true;
+        backend.load = 0;
+      });
+      loadInput.value = String(baseLoad);
+      logFeed("balanced", "Even traffic distribution restored.");
+    } else if (nextScenario === "Traffic spike") {
+      baseLoad = 62;
+      burstMultiplier = 2.2;
+      backends.forEach((backend, index) => {
+        backend.healthy = true;
+        backend.load = index * 8;
+      });
+      loadInput.value = String(baseLoad);
+      logFeed("spike", "Demand spike absorbed by load-aware routing.");
+    } else if (nextScenario === "Failover") {
+      baseLoad = 48;
+      burstMultiplier = 1.6;
+      backends.forEach((backend, index) => {
+        backend.healthy = index !== 1;
+        backend.load = index === 2 ? 34 : index * 6;
+      });
+      loadInput.value = String(baseLoad);
+      logFeed("failover", "backend-2 marked unhealthy; traffic rerouted instantly.");
+    } else if (nextScenario === "Recovery") {
+      baseLoad = 28;
+      burstMultiplier = 1;
+      backends.forEach((backend, index) => {
+        backend.healthy = true;
+        backend.load = Math.max(0, 18 - index * 3);
+      });
+      loadInput.value = String(baseLoad);
+      logFeed("recovery", "health checks passed and load normalized.");
+    }
+
+    updateMetrics();
+  }
 
   function layout() {
     const rect = canvas.parentElement.getBoundingClientRect();
@@ -513,24 +618,33 @@ function initPlayground() {
     });
   }
 
+  function backendById(id) {
+    return backends.find((backend) => backend.id === id);
+  }
+
   function spawnRequest() {
     const load = baseLoad * burstMultiplier;
-    const spawnRate = load / 60; // per frame at 60fps
+    const spawnRate = Math.min(0.95, (load / 70) * simSpeed);
     if (Math.random() > spawnRate) return;
 
     const healthy = backends.filter((b) => b.healthy);
     if (healthy.length === 0) {
       stats.dropped++;
+      currentActivePath = "client → lb → dropped";
+      logFeed("drop", "all backends unavailable; request shed at the edge.", "danger");
       return;
     }
 
     // Weighted by inverse load (simple load-aware routing)
-    const totalWeight = healthy.reduce((sum, b) => sum + Math.max(5, 100 - b.load), 0);
+    const totalWeight = healthy.reduce((sum, b) => sum + Math.max(8, 110 - b.load), 0);
     let r = Math.random() * totalWeight;
     const target = healthy.find((b) => {
-      r -= Math.max(5, 100 - b.load);
+      r -= Math.max(8, 110 - b.load);
       return r <= 0;
     }) || healthy[0];
+
+    currentActivePath = `client → lb → backend-${target.id + 1}`;
+    logFeed("route", `weighted decision picked backend-${target.id + 1} at ${Math.round(target.load)}% load.`);
 
     requests.push({
       x: width * 0.5,
@@ -539,6 +653,8 @@ function initPlayground() {
       t: 0,
       state: "to-backend",
       latency: target.latency * (1 + target.load / 200),
+      hue: target.hue,
+      trail: [],
     });
     stats.total++;
   }
@@ -552,8 +668,55 @@ function initPlayground() {
 
     // Simulate p99 from current backend loads
     const avgLoad = backends.reduce((s, b) => s + b.load, 0) / backends.length;
-    const p99 = Math.round(avgLoad * 0.8 + (backends.length - healthyCount) * 40 + 5);
+    const p99 = Math.round(avgLoad * 0.75 + (backends.length - healthyCount) * 44 + 6);
     p99El.textContent = `${p99}ms`;
+
+    if (modeEl) modeEl.textContent = currentScenario;
+    if (pathEl) pathEl.textContent = currentActivePath;
+    if (saturationEl) saturationEl.textContent = `${Math.min(100, Math.round(avgLoad + (rps / 2)))}%`;
+
+    backendBars.forEach(({ id, fill, pct }) => {
+      const backend = backendById(id);
+      if (!backend) return;
+      const loadPct = Math.round(backend.load);
+      if (fill) fill.style.width = `${Math.min(100, loadPct)}%`;
+      if (pct) pct.textContent = backend.healthy ? `${loadPct}%` : "down";
+    });
+
+    drawLatencySpark();
+  }
+
+  function drawLatencySpark() {
+    if (!sparkCtx) return;
+    const w = sparkCanvas.width;
+    const h = sparkCanvas.height;
+    sparkCtx.clearRect(0, 0, w, h);
+    const samples = stats.latencies.slice(-LATENCY_WINDOW);
+    if (samples.length < 2) return;
+
+    const max = Math.max(...samples, 1);
+    const min = Math.min(...samples);
+    const range = Math.max(1, max - min);
+    const step = w / (LATENCY_WINDOW - 1);
+    const offset = LATENCY_WINDOW - samples.length;
+
+    sparkCtx.beginPath();
+    samples.forEach((value, i) => {
+      const x = (offset + i) * step;
+      const y = h - ((value - min) / range) * (h - 4) - 2;
+      if (i === 0) sparkCtx.moveTo(x, y);
+      else sparkCtx.lineTo(x, y);
+    });
+    sparkCtx.strokeStyle = "rgba(79, 209, 165, 0.85)";
+    sparkCtx.lineWidth = 1.4;
+    sparkCtx.stroke();
+
+    const lastX = (offset + samples.length - 1) * step;
+    const lastY = h - ((samples[samples.length - 1] - min) / range) * (h - 4) - 2;
+    sparkCtx.fillStyle = "#4fd1a5";
+    sparkCtx.beginPath();
+    sparkCtx.arc(lastX, lastY, 1.8, 0, Math.PI * 2);
+    sparkCtx.fill();
   }
 
   function drawNode(x, y, r, color, label, sub) {
@@ -562,11 +725,19 @@ function initPlayground() {
     ctx.fillStyle = color;
     ctx.fill();
 
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 3.5);
+    glow.addColorStop(0, color.replace("1)", "0.55)") || color);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
     // Load ring
     ctx.beginPath();
     ctx.arc(x, y, r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * 0.01);
-    ctx.strokeStyle = "rgba(255,255,255,0.1)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 2.2;
     ctx.stroke();
 
     ctx.fillStyle = "var(--text)";
@@ -583,10 +754,37 @@ function initPlayground() {
   function render() {
     ctx.clearRect(0, 0, width, height);
 
+    // Faint backdrop grid for visual depth.
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    ctx.strokeStyle = "rgba(91, 140, 255, 0.12)";
+    for (let x = 0; x < width; x += 56) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < height; y += 56) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Glow in the center so the load balancer feels like a live hub.
+    const hubGlow = ctx.createRadialGradient(width * 0.5, height * 0.5, 0, width * 0.5, height * 0.5, Math.min(width, height) * 0.38);
+    hubGlow.addColorStop(0, "rgba(91, 140, 255, 0.12)");
+    hubGlow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = hubGlow;
+    ctx.beginPath();
+    ctx.arc(width * 0.5, height * 0.5, Math.min(width, height) * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+
     // Draw connections
     backends.forEach((b) => {
-      ctx.strokeStyle = b.healthy ? "rgba(79, 209, 165, 0.15)" : "rgba(255, 107, 107, 0.15)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = b.healthy ? `hsla(${b.hue}, 85%, 62%, 0.16)` : "rgba(255, 107, 107, 0.18)";
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.moveTo(width * 0.5, height * 0.5);
       ctx.lineTo(b.x, b.y);
@@ -594,11 +792,11 @@ function initPlayground() {
     });
 
     // Draw LB
-    drawNode(width * 0.5, height * 0.5, 18, "#5b8cff", "LB", null);
+    drawNode(width * 0.5, height * 0.5, 19, "#5b8cff", "LB", null);
 
     // Draw backends
     backends.forEach((b) => {
-      const color = b.healthy ? "#4fd1a5" : "#ff6b6b";
+      const color = b.healthy ? `hsla(${b.hue}, 85%, 62%, 1)` : "#ff6b6b";
       const loadPct = Math.round(b.load);
       drawNode(b.x, b.y, 14, color, `BE-${b.id + 1}`, `${loadPct}% load`);
     });
@@ -607,19 +805,34 @@ function initPlayground() {
 
     // Update and draw requests
     requests = requests.filter((req) => {
-      req.t += 0.04;
+      req.t += 0.04 * simSpeed;
+      req.trail.push({ x: req.x, y: req.y });
+      if (req.trail.length > 14) req.trail.shift();
+
       if (req.state === "to-backend") {
         req.x = width * 0.5 + (req.target.x - width * 0.5) * req.t;
         req.y = height * 0.5 + (req.target.y - height * 0.5) * req.t;
         if (req.t >= 1) {
           req.t = 0;
           req.state = "processing";
-          req.target.load = Math.min(100, req.target.load + 4);
+          req.target.load = Math.min(100, req.target.load + 4.5);
           stats.latencies.push(req.latency);
+          if (stats.latencies.length > LATENCY_WINDOW) stats.latencies.shift();
+          logFeed("accept", `backend-${req.target.id + 1} handled the request in ${Math.round(req.latency)}ms.`);
         }
-        ctx.fillStyle = req.target.healthy ? "#dbe2ef" : "#ff6b6b";
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.strokeStyle = `hsla(${req.hue}, 85%, 65%, 0.5)`;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(req.x, req.y, 3, 0, Math.PI * 2);
+        ctx.moveTo(width * 0.5, height * 0.5);
+        ctx.lineTo(req.x, req.y);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = req.target.healthy ? "#eef4ff" : "#ff6b6b";
+        ctx.beginPath();
+        ctx.arc(req.x, req.y, 3.4, 0, Math.PI * 2);
         ctx.fill();
         return true;
       } else if (req.state === "processing") {
@@ -627,16 +840,32 @@ function initPlayground() {
           req.t = 0;
           req.state = "returning";
         }
+        const pulsate = 5 + Math.sin(performance.now() / 90) * 1.2;
+        ctx.fillStyle = `hsla(${req.hue}, 85%, 65%, 0.9)`;
+        ctx.beginPath();
+        ctx.arc(req.target.x, req.target.y, pulsate, 0, Math.PI * 2);
+        ctx.fill();
         return true;
       } else {
         req.x = req.target.x + (width * 0.5 - req.target.x) * req.t;
         req.y = req.target.y + (height * 0.5 - req.target.y) * req.t;
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = `hsla(${req.hue}, 85%, 60%, 0.6)`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(req.target.x, req.target.y);
+        ctx.lineTo(req.x, req.y);
+        ctx.stroke();
+        ctx.restore();
+
         ctx.fillStyle = "#4fd1a5";
         ctx.beginPath();
-        ctx.arc(req.x, req.y, 3, 0, Math.PI * 2);
+        ctx.arc(req.x, req.y, 3.2, 0, Math.PI * 2);
         ctx.fill();
         if (req.t >= 1) {
           req.target.load = Math.max(0, req.target.load - 3);
+          logFeed("return", `response returned from backend-${req.target.id + 1}.`);
           return false;
         }
         return true;
@@ -645,17 +874,27 @@ function initPlayground() {
 
     // Decay backend load
     backends.forEach((b) => {
-      b.load = Math.max(0, b.load - 0.15);
+      b.load = Math.max(0, b.load - 0.18 * simSpeed);
     });
 
+    if (burstTimer > 0) {
+      burstTimer -= 1 * simSpeed;
+      if (burstTimer <= 0) {
+        burstTimer = 0;
+        burstMultiplier = 1;
+        logFeed("recover", "burst window closed; routing normalized.");
+      }
+    }
+
     updateMetrics();
-    animationId = requestAnimationFrame(render);
+    if (!paused) animationId = requestAnimationFrame(render);
   }
 
   // Controls
   if (loadInput) {
     loadInput.addEventListener("input", () => {
       baseLoad = parseInt(loadInput.value, 10);
+      logFeed("load", `operator raised traffic to ${baseLoad} RPS.`);
     });
   }
 
@@ -663,8 +902,78 @@ function initPlayground() {
     burstBtn.addEventListener("click", () => {
       burstMultiplier = 5;
       burstTimer = 180; // frames (~3s)
+      logFeed("burst", "traffic burst triggered from the control panel.");
     });
   }
+
+  scenarioButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const scenarioKey = button.getAttribute("data-scenario");
+      setScenario(SCENARIO_KEYS[scenarioKey] || "Balanced");
+    });
+  });
+
+  if (replayBtn) {
+    replayBtn.addEventListener("click", () => {
+      logFeed("replay", `${currentScenario.toLowerCase()} scenario restarted from the top.`);
+      requests = [];
+      setScenario(currentScenario);
+    });
+  }
+
+  if (shareBtn) {
+    shareBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        logFeed("share", "link to this scenario copied to clipboard.");
+      } catch (err) {
+        logFeed("share", `copy link: ${window.location.href}`, "danger");
+      }
+    });
+  }
+
+  function setPaused(nextPaused) {
+    paused = nextPaused;
+    if (paused) {
+      if (animationId) cancelAnimationFrame(animationId);
+      animationId = null;
+    } else if (!animationId) {
+      animationId = requestAnimationFrame(render);
+    }
+    if (playPauseBtn) {
+      playPauseBtn.textContent = paused ? "▶ Play" : "⏸ Pause";
+      playPauseBtn.setAttribute("aria-pressed", String(paused));
+    }
+  }
+
+  if (playPauseBtn) {
+    playPauseBtn.addEventListener("click", () => {
+      setPaused(!paused);
+      logFeed("playback", paused ? "simulation paused." : "simulation resumed.");
+    });
+  }
+
+  speedButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      simSpeed = parseFloat(button.getAttribute("data-speed")) || 1;
+      speedButtons.forEach((b) => b.classList.toggle("active", b === button));
+      logFeed("speed", `simulation speed set to ${simSpeed}×.`);
+    });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const tag = event.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || event.target.isContentEditable) return;
+    const rect = canvas.parentElement.closest("section")?.getBoundingClientRect();
+    if (rect && (rect.bottom < 0 || rect.top > window.innerHeight)) return;
+
+    const scenarioKey = { "1": "balanced", "2": "spike", "3": "failover", "4": "recovery" }[event.key];
+    if (scenarioKey) {
+      const button = scenarioButtons.find((b) => b.dataset.scenario === scenarioKey);
+      if (button) button.click();
+    }
+  });
 
   backendToggles.forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -672,10 +981,32 @@ function initPlayground() {
       backends[id].healthy = !backends[id].healthy;
       btn.classList.toggle("active", backends[id].healthy);
       btn.setAttribute("aria-pressed", String(backends[id].healthy));
+      logFeed(backends[id].healthy ? "heal" : "offline", `backend-${id + 1} ${backends[id].healthy ? "recovered" : "taken out of rotation"}.`);
     });
   });
 
+  canvas.parentElement.addEventListener("click", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * width;
+    const y = ((event.clientY - rect.top) / rect.height) * height;
+    const clicked = backends.find((backend) => Math.hypot(x - backend.x, y - backend.y) < 24);
+    if (clicked) {
+      clicked.healthy = !clicked.healthy;
+      const button = document.querySelector(`.backend-toggle[data-backend="${clicked.id}"]`);
+      if (button) {
+        button.classList.toggle("active", clicked.healthy);
+        button.setAttribute("aria-pressed", String(clicked.healthy));
+      }
+      logFeed(clicked.healthy ? "heal" : "offline", `clicked ${clicked.healthy ? "re-enabled" : "disabled"} backend-${clicked.id + 1}.`);
+      updateMetrics();
+    }
+  });
+
+  const hashMatch = /playground=(\w+)/.exec(window.location.hash);
+  const initialScenario = hashMatch && SCENARIO_KEYS[hashMatch[1]] ? SCENARIO_KEYS[hashMatch[1]] : "Balanced";
+
   layout();
+  setScenario(initialScenario, { skipHash: true });
   render();
 
   window.addEventListener("resize", () => {
@@ -684,6 +1015,7 @@ function initPlayground() {
   });
 
   document.addEventListener("visibilitychange", () => {
+    if (paused) return;
     if (document.hidden) {
       if (animationId) cancelAnimationFrame(animationId);
       animationId = null;
@@ -763,6 +1095,8 @@ function initPipeline() {
     node.addEventListener("mouseenter", () => showLayer(node.getAttribute("data-layer")));
     node.addEventListener("click", () => showLayer(node.getAttribute("data-layer")));
   });
+
+  showLayer("1");
 }
 
 /**

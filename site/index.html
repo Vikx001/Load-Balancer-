@@ -139,18 +139,44 @@ cd "Load-Balancer-"
       Add traffic, fail a backend, and watch the algorithms reroute, shed load, and rebalance.
     </p>
 
+    <div class="playground-scenarios" role="toolbar" aria-label="Playground scenarios">
+      <button class="scenario-chip active" type="button" data-scenario="balanced" aria-keyshortcuts="1">Balanced <kbd>1</kbd></button>
+      <button class="scenario-chip" type="button" data-scenario="spike" aria-keyshortcuts="2">Traffic spike <kbd>2</kbd></button>
+      <button class="scenario-chip" type="button" data-scenario="failover" aria-keyshortcuts="3">Failover <kbd>3</kbd></button>
+      <button class="scenario-chip" type="button" data-scenario="recovery" aria-keyshortcuts="4">Recovery <kbd>4</kbd></button>
+      <button id="pg-replay" class="scenario-chip scenario-chip-ghost" type="button" title="Replay the current scenario from the start">↻ Replay</button>
+      <button id="pg-share" class="scenario-chip scenario-chip-ghost" type="button" title="Copy a link to this scenario">🔗 Copy link</button>
+    </div>
+
     <div class="playground">
       <div class="playground-stage">
         <canvas id="playground-canvas" aria-label="Live load balancer simulation showing clients, load balancer, and backends"></canvas>
         <div class="playground-overlay" id="playground-overlay">
           <div class="metric-pill"><span class="metric-label">RPS</span><span class="metric-value" id="pg-rps">0</span></div>
-          <div class="metric-pill"><span class="metric-label">P99 latency</span><span class="metric-value" id="pg-p99">0ms</span></div>
+          <div class="metric-pill metric-pill-spark">
+            <span class="metric-label">P99 latency</span>
+            <span class="metric-value" id="pg-p99">0ms</span>
+            <canvas id="pg-latency-spark" class="latency-spark" width="60" height="20" aria-hidden="true"></canvas>
+          </div>
           <div class="metric-pill"><span class="metric-label">Healthy</span><span class="metric-value" id="pg-healthy">4/4</span></div>
           <div class="metric-pill"><span class="metric-label">Dropped</span><span class="metric-value" id="pg-dropped">0</span></div>
+        </div>
+        <div class="playground-status" aria-live="polite">
+          <span class="status-pill"><span class="status-label">Mode</span><span class="status-value" id="pg-mode">Balanced</span></span>
+          <span class="status-pill"><span class="status-label">Active path</span><span class="status-value" id="pg-path">client → lb → backend-1</span></span>
+          <span class="status-pill"><span class="status-label">Saturation</span><span class="status-value" id="pg-saturation">12%</span></span>
         </div>
       </div>
 
       <div class="playground-controls">
+        <div class="playground-feed-panel">
+          <div class="playground-feed-head">
+            <span>Live routing feed</span>
+            <span class="live-feed-dot"></span>
+          </div>
+          <ul class="playground-feed" id="pg-feed" aria-live="polite" aria-relevant="additions"></ul>
+        </div>
+
         <div class="control-group">
           <label for="pg-load">Traffic load</label>
           <input id="pg-load" type="range" min="0" max="100" value="30" aria-describedby="pg-load-help" />
@@ -159,23 +185,47 @@ cd "Load-Balancer-"
 
         <div class="control-group backend-toggles">
           <span class="control-label">Backend health</span>
-          <button class="backend-toggle active" data-backend="0" type="button" aria-pressed="true">
-            <span class="backend-dot"></span> backend-1
+          <button class="backend-toggle active" data-backend="0" type="button" aria-pressed="true" style="--backend-hue: 175">
+            <span class="backend-dot"></span>
+            <span class="backend-toggle-label">backend-1</span>
+            <span class="backend-load-bar"><span class="backend-load-fill" data-backend-fill="0"></span></span>
+            <span class="backend-load-pct" data-backend-pct="0">0%</span>
           </button>
-          <button class="backend-toggle active" data-backend="1" type="button" aria-pressed="true">
-            <span class="backend-dot"></span> backend-2
+          <button class="backend-toggle active" data-backend="1" type="button" aria-pressed="true" style="--backend-hue: 195">
+            <span class="backend-dot"></span>
+            <span class="backend-toggle-label">backend-2</span>
+            <span class="backend-load-bar"><span class="backend-load-fill" data-backend-fill="1"></span></span>
+            <span class="backend-load-pct" data-backend-pct="1">0%</span>
           </button>
-          <button class="backend-toggle active" data-backend="2" type="button" aria-pressed="true">
-            <span class="backend-dot"></span> backend-3
+          <button class="backend-toggle active" data-backend="2" type="button" aria-pressed="true" style="--backend-hue: 155">
+            <span class="backend-dot"></span>
+            <span class="backend-toggle-label">backend-3</span>
+            <span class="backend-load-bar"><span class="backend-load-fill" data-backend-fill="2"></span></span>
+            <span class="backend-load-pct" data-backend-pct="2">0%</span>
           </button>
-          <button class="backend-toggle active" data-backend="3" type="button" aria-pressed="true">
-            <span class="backend-dot"></span> backend-4
+          <button class="backend-toggle active" data-backend="3" type="button" aria-pressed="true" style="--backend-hue: 210">
+            <span class="backend-dot"></span>
+            <span class="backend-toggle-label">backend-4</span>
+            <span class="backend-load-bar"><span class="backend-load-fill" data-backend-fill="3"></span></span>
+            <span class="backend-load-pct" data-backend-pct="3">0%</span>
           </button>
         </div>
 
         <div class="control-group">
           <button id="pg-burst" class="btn btn-primary" type="button">Trigger traffic burst</button>
           <span class="control-hint">Simulates a sudden 5× spike for 3 seconds</span>
+        </div>
+
+        <div class="control-group playground-playback">
+          <span class="control-label">Playback</span>
+          <div class="playback-row">
+            <button id="pg-playpause" class="btn btn-ghost" type="button" aria-pressed="false">⏸ Pause</button>
+            <div class="speed-group" role="group" aria-label="Simulation speed">
+              <button class="scenario-chip speed-chip" type="button" data-speed="0.5">0.5×</button>
+              <button class="scenario-chip speed-chip active" type="button" data-speed="1">1×</button>
+              <button class="scenario-chip speed-chip" type="button" data-speed="2">2×</button>
+            </div>
+          </div>
         </div>
 
         <div class="playground-legend">
