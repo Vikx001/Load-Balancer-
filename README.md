@@ -524,9 +524,9 @@ Backend control action (kill/revive/spike)
 ### Control-Plane Admin API Authentication
 
 The Go control plane (`controlplane/`) exposes a **separate** HTTP admin API on `:9000`
-(`/admin/mode`, `/admin/explain/recent`, `/admin/healthz`) used for runtime routing
-inspection and mode overrides — distinct from the Python demo proxy's `/_omega/admin`
-path documented above.
+(`/admin/mode`, `/admin/explain/recent`, `/admin/drain`, `/admin/healthz`) used for runtime
+routing inspection, mode overrides, and operator-initiated backend draining — distinct from
+the Python demo proxy's `/_omega/admin` path documented above.
 
 Set a token to require authentication on every endpoint except `/admin/healthz`:
 
@@ -1910,7 +1910,41 @@ grep "circuit" /var/log/omega-lb.log | grep -E "OPEN|HALF_OPEN|CLOSED"
 
 ---
 
-### 4. i-Sock Pool Leaks on Backend Restart (MEDIUM)
+### 4. No Operator-Initiated Drain Before Restart (MEDIUM)
+
+**Symptom:** An SRE needs to restart backend-2 for a routine deploy. The only options are: restart it and accept the connection resets and cold-start spike that items 5 and 6 below exist to mitigate, or manually call `SetHealth(id, false)` — which fires the same alert path as an actual backend failure, paging on-call for a restart that was never an incident.
+
+**Root cause:** `ring.Backend` exposed only one state, `Health`, conflating "failed a probe" with "intentionally withdrawn for maintenance." There was no way to signal "take this out of rotation on purpose" without also triggering unhealthy-backend alerting, and no way to know when it was actually safe to restart (in-flight requests could still be in progress).
+
+| Wrong approach | Implemented fix |
+| --- | --- |
+| `SetHealth(id, false)` to force it out of rotation | `Backend.Draining` — a separate state; `Health` stays true, no false alert |
+| Restart and accept the connection resets | `POST /admin/drain` — new requests stop routing to it immediately; in-flight ones finish normally |
+| No way to know it's actually safe to restart | `GET /admin/drain` reports `active_reqs` per backend — poll until it reaches 0 |
+
+**Implemented in:**
+
+- [controlplane/internal/ring/ring.go](controlplane/internal/ring/ring.go) — `Backend.Draining`; `rebuild()`, `adjust()`, `leastLoaded()`, and `ProactiveAdjust()` all exclude draining backends from new routing and vnode rebalancing
+- [controlplane/internal/ring/helpers.go](controlplane/internal/ring/helpers.go) — `SetDraining(id, draining) bool`
+- [controlplane/internal/admin/server.go](controlplane/internal/admin/server.go) — `GET/POST /admin/drain`
+
+**Operational (safe restart runbook):**
+
+```bash
+# 1. Drain backend-2 before touching it
+curl -XPOST http://localhost:9000/admin/drain -d '{"backend_id":2,"draining":true}'
+
+# 2. Poll until its in-flight requests finish
+curl http://localhost:9000/admin/drain | jq '.[] | select(.backend_id==2)'
+# → {"backend_id":2,"draining":true,"active_reqs":0}   ← safe to restart
+
+# 3. Restart the backend, then bring it back into rotation
+curl -XPOST http://localhost:9000/admin/drain -d '{"backend_id":2,"draining":false}'
+```
+
+---
+
+### 5. i-Sock Pool Leaks on Backend Restart (MEDIUM)
 
 **Symptom:** After a backend restart, some connections hang or return `ECONNRESET` for 11–30 seconds. CPU spikes on the load balancer node (user-space relay fallback). Pool hit rate alert fires.
 
@@ -1950,7 +1984,7 @@ curl -X POST http://localhost:9000/admin/reconnect-pool
 
 ---
 
-### 5. Thundering Herd on Backend Restart (MEDIUM)
+### 6. Thundering Herd on Backend Restart (MEDIUM)
 
 **Symptom:** A backend comes back UP, then goes DOWN again within 30 seconds. CPU and memory spike on the backend. The health checker enters a DOWN→UP→DOWN loop.
 
@@ -2000,7 +2034,7 @@ health:
 
 ---
 
-### 6. Multi-Node Ring Divergence (DISTRIBUTED)
+### 7. Multi-Node Ring Divergence (DISTRIBUTED)
 
 **Symptom:** In a DaemonSet deployment, different nodes route the same session to different backends. Aggregate load on backends is uneven despite H&A being active on each node. RL agents on different nodes fight each other.
 
