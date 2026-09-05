@@ -39,6 +39,14 @@ type Backend struct {
 	// stateful backends to preserve session affinity.  Use the AffinityTable
 	// for routing; only adjust weight via traffic mirroring.
 	Stateful bool
+	// Draining marks a backend as intentionally withdrawn from new-request
+	// routing (planned maintenance/deploy), as distinct from Health=false
+	// (which means the backend failed a health probe). A draining backend
+	// keeps Health=true and keeps serving its existing in-flight requests
+	// (ActiveReqs still decrements via ReleaseConn) — it is simply excluded
+	// from the ring so Route() never selects it for new traffic. Toggle via
+	// Manager.SetDraining, e.g. from the admin API before a rolling restart.
+	Draining bool
 }
 
 // VNode is a position on the ring.
@@ -204,7 +212,7 @@ func (m *Manager) ProactiveAdjust(loadWindow map[uint32][]float64) {
 
 	for id, samples := range loadWindow {
 		b, ok := m.backends[id]
-		if !ok || !b.Health {
+		if !ok || !b.Health || b.Draining {
 			continue
 		}
 		slope := linearSlope(samples)
@@ -240,7 +248,7 @@ func (m *Manager) ProactiveAdjust(loadWindow map[uint32][]float64) {
 func (m *Manager) rebuild() {
 	m.ring = m.ring[:0]
 	for _, b := range m.backends {
-		if !b.Health {
+		if !b.Health || b.Draining {
 			continue
 		}
 		for i := 0; i < b.VnodeCount; i++ {
@@ -259,13 +267,14 @@ func (m *Manager) rebuild() {
 // Must be called under mu.Lock().
 // NOTE: Stateful backends are excluded from vnode adjustment — their vnode
 // count is never changed by H&A.  Adjusting stateful backends would silently
-// break session affinity for in-flight sessions.
+// break session affinity for in-flight sessions. Draining backends are
+// excluded too — they must not gain vnodes back while being drained.
 func (m *Manager) adjust() {
 	mean := float64(m.totalActiveReqs()) / float64(max64(int64(len(m.backends)), 1))
 	var hottest, coolest *Backend
 	for _, b := range m.backends {
-		if !b.Health || b.Stateful {
-			continue // never adjust stateful backends
+		if !b.Health || b.Stateful || b.Draining {
+			continue // never adjust stateful or draining backends
 		}
 		if hottest == nil || b.ActiveReqs > hottest.ActiveReqs {
 			hottest = b
@@ -317,7 +326,7 @@ func (m *Manager) totalActiveReqs() int64 {
 func (m *Manager) leastLoaded() *Backend {
 	var least *Backend
 	for _, b := range m.backends {
-		if !b.Health {
+		if !b.Health || b.Draining {
 			continue
 		}
 		if least == nil || b.ActiveReqs < least.ActiveReqs {
