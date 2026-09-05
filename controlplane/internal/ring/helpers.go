@@ -24,3 +24,19 @@ func (m *Manager) Backends() []uint32 {
 	}
 	return ids
 }
+
+// SetDraining marks a backend as draining (or cancels a drain). A draining
+// backend is immediately excluded from the ring — no new requests are routed
+// to it — while its existing in-flight requests continue to be tracked
+// normally via ReleaseConn. Reports whether the backend was found.
+func (m *Manager) SetDraining(id uint32, draining bool) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.backends[id]
+	if !ok {
+		return false
+	}
+	b.Draining = draining
+	m.rebuild()
+	return true
+}

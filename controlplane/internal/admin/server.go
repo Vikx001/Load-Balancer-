@@ -18,6 +18,7 @@
 //	$ curl http://localhost:9000/admin/mode   # check current mode
 //	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"ASSISTED"}'  # bypass RL
 //	$ curl -XPOST http://localhost:9000/admin/mode -d '{"mode":"MANUAL","weights":[0.33,0.33,0.34]}'
+//	$ curl -XPOST http://localhost:9000/admin/drain -d '{"backend_id":3,"draining":true}'  # before a restart
 //	$ curl http://localhost:9000/admin/healthz  # confirm daemon is alive
 //
 // ─── SECURITY NOTE ───────────────────────────────────────────────────────────
@@ -178,6 +179,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/admin/explain/backend", s.requireAuth(s.handleExplainBackend))
 	mux.HandleFunc("/admin/mode", s.requireAuth(s.handleMode))
 	mux.HandleFunc("/admin/ring", s.requireAuth(s.handleRing))
+	mux.HandleFunc("/admin/drain", s.requireAuth(s.handleDrain))
 	mux.HandleFunc("/admin/consensus", s.requireAuth(s.handleConsensus))
 
 	srv := &http.Server{
@@ -199,7 +201,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info("admin API server started",
 		zap.String("addr", s.addr),
 		zap.Bool("authenticated", s.token != ""),
-		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode /admin/ring /admin/consensus"),
+		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode /admin/ring /admin/drain /admin/consensus"),
 	)
 
 	select {
@@ -399,6 +401,7 @@ type ringBackendInfo struct {
 	WeightPct  float64 `json:"weight_pct"` // percentage of total vnodes
 	Healthy    bool    `json:"healthy"`
 	Stateful   bool    `json:"stateful"`
+	Draining   bool    `json:"draining"`
 	ActiveReqs int64   `json:"active_reqs"`
 }
 
@@ -418,14 +421,17 @@ func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ids := s.ring.Backends()
-	total := 0
+	total := 0 // vnodes actually in the ring — excludes unhealthy/draining backends
 	backends := make([]ringBackendInfo, 0, len(ids))
 	for _, id := range ids {
 		b := s.ring.BackendInfo(id)
 		if b == nil {
 			continue
 		}
-		total += b.VnodeCount
+		inRing := b.Health && !b.Draining
+		if inRing {
+			total += b.VnodeCount
+		}
 		backends = append(backends, ringBackendInfo{
 			ID:         b.ID,
 			IP:         fmt.Sprintf("%d.%d.%d.%d", b.IP[0], b.IP[1], b.IP[2], b.IP[3]),
@@ -433,15 +439,19 @@ func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
 			Vnodes:     b.VnodeCount,
 			Healthy:    b.Health,
 			Stateful:   b.Stateful,
+			Draining:   b.Draining,
 			ActiveReqs: b.ActiveReqs,
 		})
 	}
 
-	// compute weight percentages after collecting total
+	// Weight percentages reflect actual traffic share: an unhealthy or
+	// draining backend gets 0%, even though its Vnodes field (its configured
+	// count, restored as-is when it rejoins the ring) is left unchanged.
 	for i := range backends {
-		if total > 0 {
-			backends[i].WeightPct = float64(backends[i].Vnodes) / float64(total) * 100.0
+		if !backends[i].Healthy || backends[i].Draining || total == 0 {
+			continue
 		}
+		backends[i].WeightPct = float64(backends[i].Vnodes) / float64(total) * 100.0
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -450,6 +460,91 @@ func (s *Server) handleRing(w http.ResponseWriter, r *http.Request) {
 		TotalVnodes:  total,
 		BackendCount: len(backends),
 	})
+}
+
+// ─── GET/POST /admin/drain ───────────────────────────────────────────────────
+//
+// GET returns the draining state of every backend. POST marks a backend as
+// draining (or cancels a drain) so an operator can gracefully take it out of
+// rotation before a deploy/restart — no new request is routed to it, but its
+// existing in-flight requests keep completing normally. Unlike an unhealthy
+// backend, a draining one still passes health checks; it is withdrawn on
+// purpose, not because it failed.
+//
+// Example:
+//
+//	$ curl http://localhost:9000/admin/drain | jq .
+//	$ curl -XPOST http://localhost:9000/admin/drain -d '{"backend_id":3,"draining":true}'
+//	→ {"backend_id":3,"draining":true,"active_reqs":12}
+//	# poll active_reqs (via this endpoint or /admin/ring) until it reaches 0,
+//	# then restart backend-3 and clear the drain:
+//	$ curl -XPOST http://localhost:9000/admin/drain -d '{"backend_id":3,"draining":false}'
+
+type drainRequest struct {
+	BackendID uint32 `json:"backend_id"`
+	Draining  bool   `json:"draining"`
+}
+
+type drainBackendInfo struct {
+	BackendID  uint32 `json:"backend_id"`
+	Draining   bool   `json:"draining"`
+	ActiveReqs int64  `json:"active_reqs"`
+}
+
+func (s *Server) handleDrain(w http.ResponseWriter, r *http.Request) {
+	if s.ring == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "ring manager not available")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetDrain(w, r)
+	case http.MethodPost:
+		s.handleSetDrain(w, r)
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) handleGetDrain(w http.ResponseWriter, r *http.Request) {
+	ids := s.ring.Backends()
+	infos := make([]drainBackendInfo, 0, len(ids))
+	for _, id := range ids {
+		b := s.ring.BackendInfo(id)
+		if b == nil {
+			continue
+		}
+		infos = append(infos, drainBackendInfo{
+			BackendID:  b.ID,
+			Draining:   b.Draining,
+			ActiveReqs: b.ActiveReqs,
+		})
+	}
+	writeJSON(w, infos)
+}
+
+func (s *Server) handleSetDrain(w http.ResponseWriter, r *http.Request) {
+	var req drainRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+
+	if !s.ring.SetDraining(req.BackendID, req.Draining) {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("backend %d not found", req.BackendID))
+		return
+	}
+
+	s.log.Info("admin: backend drain state changed",
+		zap.Uint32("backend_id", req.BackendID),
+		zap.Bool("draining", req.Draining),
+	)
+
+	resp := drainBackendInfo{BackendID: req.BackendID, Draining: req.Draining}
+	if b := s.ring.BackendInfo(req.BackendID); b != nil {
+		resp.ActiveReqs = b.ActiveReqs
+	}
+	writeJSON(w, resp)
 }
 
 // ─── GET /admin/consensus ─────────────────────────────────────────────────────
