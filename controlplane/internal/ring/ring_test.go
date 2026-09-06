@@ -61,6 +61,34 @@ func TestSetDrainingUnknownBackendReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestSetDrainingAllDrainsEveryBackend(t *testing.T) {
+	m := newTestManager(t)
+	m.AddBackend(&Backend{ID: 1, Health: true, CapacityMax: 1000})
+	m.AddBackend(&Backend{ID: 2, Health: true, CapacityMax: 1000})
+	m.AddBackend(&Backend{ID: 3, Health: true, CapacityMax: 1000})
+
+	if n := m.SetDrainingAll(true); n != 3 {
+		t.Fatalf("expected SetDrainingAll to report 3 backends affected, got %d", n)
+	}
+
+	for _, id := range []uint32{1, 2, 3} {
+		b := m.BackendInfo(id)
+		if b == nil || !b.Draining {
+			t.Fatalf("backend %d should be draining after SetDrainingAll(true), got %+v", id, b)
+		}
+	}
+	if _, err := m.Route(1); err == nil {
+		t.Fatalf("expected Route to fail with every backend drained")
+	}
+
+	if n := m.SetDrainingAll(false); n != 3 {
+		t.Fatalf("expected SetDrainingAll(false) to report 3 backends affected, got %d", n)
+	}
+	if _, err := m.Route(1); err != nil {
+		t.Fatalf("Route after SetDrainingAll(false): %v", err)
+	}
+}
+
 func TestSetDrainingCanBeCancelled(t *testing.T) {
 	m := newTestManager(t)
 	m.AddBackend(&Backend{ID: 1, Health: true, CapacityMax: 1000})

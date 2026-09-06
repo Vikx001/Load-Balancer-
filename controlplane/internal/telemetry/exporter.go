@@ -22,6 +22,7 @@ import (
 
 	"github.com/omega-lb/omega-lb/internal/config"
 	"github.com/omega-lb/omega-lb/internal/metrics"
+	"github.com/omega-lb/omega-lb/internal/ring"
 )
 
 // Exporter periodically pushes metrics to an OTLP endpoint.
@@ -29,6 +30,7 @@ type Exporter struct {
 	cfg    config.TelemetryConfig
 	log    *zap.Logger
 	budget *metrics.CardinalityBudget
+	ring   *ring.Manager
 }
 
 // NewExporter constructs the telemetry exporter.
@@ -40,6 +42,14 @@ func NewExporter(cfg config.TelemetryConfig, log *zap.Logger) (*Exporter, error)
 // SetCardinalityBudget wires the cardinality guard.  Must be called before Run.
 func (e *Exporter) SetCardinalityBudget(b *metrics.CardinalityBudget) {
 	e.budget = b
+}
+
+// SetRingManager wires the ring manager so per-backend export can report
+// operator-driven state (draining, health) alongside eBPF-observed traffic
+// stats.  Must be called before Run. Optional — without it,
+// omega_lb_backend_draining is simply not emitted.
+func (e *Exporter) SetRingManager(rm *ring.Manager) {
+	e.ring = rm
 }
 
 // Run exports metrics on the configured interval.
@@ -77,6 +87,18 @@ func (e *Exporter) export() {
 		reqCount := stats.RequestCount
 		stats.RUnlock()
 
+		// draining/healthy come from the ring manager, not the eBPF ringbuf —
+		// a fully-drained backend can have zero recent traffic samples but
+		// operators still need to see its state (e.g. to confirm a drain
+		// actually took effect before restarting it).
+		var draining, healthy bool
+		if e.ring != nil {
+			if b := e.ring.BackendInfo(id); b != nil {
+				draining = b.Draining
+				healthy = b.Health
+			}
+		}
+
 		// Label normalization: backend_id is an opaque uint32.
 		// DO NOT add backend_ip, path, or method here — they are high-cardinality.
 		// If path-level breakdown is needed, use exemplars (OpenTelemetry traces).
@@ -88,6 +110,8 @@ func (e *Exporter) export() {
 			zap.Float64("omega_lb_backend_latency_ms", lat),
 			zap.Float64("omega_lb_backend_error_rate", errRate),
 			zap.Uint64("omega_lb_backend_requests_total", reqCount),
+			zap.Bool("omega_lb_backend_draining", draining),
+			zap.Bool("omega_lb_backend_healthy", healthy),
 			zap.Uint64("omega_lb_cardinality_overflows_total", overflows),
 		)
 		// Real impl: emit these as OTLP metrics via otel.Meter().
@@ -95,6 +119,8 @@ func (e *Exporter) export() {
 		//   omega_lb_backend_latency_ms{backend_id}         — EWMA latency
 		//   omega_lb_backend_error_rate{backend_id}         — 1-min error rate
 		//   omega_lb_backend_requests_total{backend_id}     — cumulative requests
+		//   omega_lb_backend_draining{backend_id}           — 1 if operator-drained, else 0
+		//   omega_lb_backend_healthy{backend_id}            — 1 if passing health checks, else 0
 		//   omega_lb_ring_balance_factor                    — ring-level only
 		//   omega_lb_rl_action_weights{backend_id}          — RL weight per backend
 		//   omega_lb_cbf_projection_magnitude               — CBF correction magnitude
