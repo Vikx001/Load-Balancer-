@@ -159,6 +159,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Daemon, error) {
 		}
 		budget := metrics.NewCardinalityBudget(cfg.Metrics.MaxLabelValuesPerDimension, log)
 		te.SetCardinalityBudget(budget)
+		te.SetRingManager(rm)
 	}
 
 	// ── Stage 3+: Pool monitor (i-sock pool drift detector) ───────────────

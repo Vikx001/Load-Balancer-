@@ -180,6 +180,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/admin/mode", s.requireAuth(s.handleMode))
 	mux.HandleFunc("/admin/ring", s.requireAuth(s.handleRing))
 	mux.HandleFunc("/admin/drain", s.requireAuth(s.handleDrain))
+	mux.HandleFunc("/admin/drain/all", s.requireAuth(s.handleDrainAll))
 	mux.HandleFunc("/admin/consensus", s.requireAuth(s.handleConsensus))
 
 	srv := &http.Server{
@@ -201,7 +202,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info("admin API server started",
 		zap.String("addr", s.addr),
 		zap.Bool("authenticated", s.token != ""),
-		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode /admin/ring /admin/drain /admin/consensus"),
+		zap.String("endpoints", "/admin/healthz /admin/explain/recent /admin/explain/backend /admin/mode /admin/ring /admin/drain /admin/drain/all /admin/consensus"),
 	)
 
 	select {
@@ -545,6 +546,51 @@ func (s *Server) handleSetDrain(w http.ResponseWriter, r *http.Request) {
 		resp.ActiveReqs = b.ActiveReqs
 	}
 	writeJSON(w, resp)
+}
+
+// ─── POST /admin/drain/all ────────────────────────────────────────────────────
+//
+// Drains (or undrains) every backend this daemon manages in one call — for
+// node-level maintenance, e.g. withdrawing an entire node from rotation
+// before shutting it down, rather than looping POST /admin/drain per backend.
+//
+// Example:
+//
+//	$ curl -XPOST http://localhost:9000/admin/drain/all -d '{"draining":true}'
+//	→ {"draining":true,"backend_count":4}
+//	# poll GET /admin/drain until every active_reqs is 0, then take the node down.
+
+type drainAllRequest struct {
+	Draining bool `json:"draining"`
+}
+
+type drainAllResponse struct {
+	Draining     bool `json:"draining"`
+	BackendCount int  `json:"backend_count"`
+}
+
+func (s *Server) handleDrainAll(w http.ResponseWriter, r *http.Request) {
+	if s.ring == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "ring manager not available")
+		return
+	}
+	if !s.checkMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	var req drainAllRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+
+	count := s.ring.SetDrainingAll(req.Draining)
+	s.log.Info("admin: all backends drain state changed",
+		zap.Bool("draining", req.Draining),
+		zap.Int("backend_count", count),
+	)
+
+	writeJSON(w, drainAllResponse{Draining: req.Draining, BackendCount: count})
 }
 
 // ─── GET /admin/consensus ─────────────────────────────────────────────────────

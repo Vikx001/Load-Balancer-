@@ -40,3 +40,21 @@ func (m *Manager) SetDraining(id uint32, draining bool) bool {
 	m.rebuild()
 	return true
 }
+
+// SetDrainingAll marks every currently registered backend as draining (or
+// cancels a drain on all of them) with a single ring rebuild — for
+// node-level maintenance, e.g. withdrawing everything this daemon manages
+// before a full node drain/shutdown, rather than looping SetDraining per
+// backend and rebuilding the ring once per call. Returns the number of
+// backends affected.
+func (m *Manager) SetDrainingAll(draining bool) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, b := range m.backends {
+		b.Draining = draining
+		count++
+	}
+	m.rebuild()
+	return count
+}
