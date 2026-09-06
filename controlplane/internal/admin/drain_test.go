@@ -89,6 +89,41 @@ func TestHandleDrainPostUnknownBackend(t *testing.T) {
 	}
 }
 
+func TestHandleDrainAllDrainsEveryBackend(t *testing.T) {
+	s, rm := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/admin/drain/all", strings.NewReader(`{"draining":true}`))
+	rec := httptest.NewRecorder()
+	s.handleDrainAll(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp drainAllResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Draining || resp.BackendCount != 2 {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+
+	for _, id := range []uint32{1, 2} {
+		if b := rm.BackendInfo(id); b == nil || !b.Draining {
+			t.Fatalf("backend %d not draining after /admin/drain/all: %+v", id, b)
+		}
+	}
+}
+
+func TestHandleDrainAllMethodNotAllowed(t *testing.T) {
+	s, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/admin/drain/all", nil)
+	rec := httptest.NewRecorder()
+	s.handleDrainAll(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
 func TestHandleDrainMethodNotAllowed(t *testing.T) {
 	s, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodDelete, "/admin/drain", nil)
